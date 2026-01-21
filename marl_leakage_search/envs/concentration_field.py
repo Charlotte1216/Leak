@@ -3,53 +3,80 @@ concentration_field.py
 浓度场接口
 """
 import numpy as np
+from plume_model import GaussianPlumeModel2D
+from vortex_model import KarmanVortexStreet
 
 
-class ConcentrationField2D:
+class ConcentrationField:
     """
     Combined concentration field:
-    Gaussian plume (mean field) + Kármán vortex perturbation
+        C_total = sum(plume_i) * (1 + vortex)   [optionally only downstream]
     """
 
     def __init__(
         self,
-        plume_model,
-        vortex_model=None,
-        sources=None,
+        sources,
         obstacles=None,
-        clamp_nonnegative=True
+        wind_speed=1.0,
+        plume_params=None,
+        vortex_params=None,
+        keep_plume_behind_obstacle=True,
+        noise_std=0.0,
     ):
         """
-        Parameters
-        ----------
-        plume_model : GaussianPlume2D
-        vortex_model : KarmanVortexStreet or None
-        sources : list of dict
-            [{'x': float, 'y': float, 'Q': optional}]
-        obstacles : list of dict
-            [{'x': float, 'y': float, 'radius': float}]
+        sources: list of dicts {"x": , "y": , "Q": }
+        obstacles: list of dicts {"x": , "y": , "radius": }
+        keep_plume_behind_obstacle:
+            if True: plume still exists behind obstacle (realistic if wind can go around)
+            if False: plume is blocked behind obstacle (strong blockage)
+        noise_std: standard deviation of Gaussian noise added to concentration
         """
-        self.plume = plume_model
-        self.vortex = vortex_model
-        self.sources = sources if sources is not None else []
+        self.sources = sources
         self.obstacles = obstacles if obstacles is not None else []
-        self.clamp_nonnegative = clamp_nonnegative
+
+        self.plume = GaussianPlumeModel2D(
+            u=wind_speed,
+            L=plume_params.get("L", 100.0),
+            sigma_y=plume_params.get("sigma_y", 5.0)
+        )
+
+        self.vortex = KarmanVortexStreet(**(vortex_params or {}))
+
+        self.keep_plume_behind_obstacle = keep_plume_behind_obstacle
+        self.noise_std = noise_std
+
+    def _is_downstream(self, x, obstacle):
+        dx = x - obstacle["x"]
+        return dx > obstacle.get("radius", 0.0)
 
     def concentration(self, x, y, t=0.0):
         """
-        Compute total concentration at (x, y, t).
+        Compute the total concentration at grid points (x,y) at time t.
         """
-        # Mean plume concentration
-        C = self.plume.multi_source_concentration(x, y, self.sources)
+        # 1) base plume from all sources
+        C_plume = self.plume.calculate_concentration(x, y, self.sources)
 
-        # Vortex perturbation
-        if self.vortex is not None and self.obstacles:
+        # 2) apply obstacle blocking (optional)
+        if not self.keep_plume_behind_obstacle:
             for obs in self.obstacles:
-                C += self.vortex.perturbation(x, y, t, obstacle=obs)
+                downstream = self._is_downstream(x, obs)
+                C_plume[downstream] = 0.0
 
-        if self.clamp_nonnegative:
-            C = np.maximum(C, 0.0)
+        # 3) add vortex perturbation (only downstream of obstacles)
+        C_total = C_plume.copy()
+        for obs in self.obstacles:
+            downstream = self._is_downstream(x, obs)
+            if np.any(downstream):
+                f_vortex = self.vortex.perturbation(x, y, t=t, obstacle=obs)
+                # only add perturbation downstream
+                C_total[downstream] = C_total[downstream] * (1 + f_vortex[downstream])
 
-        return C
+        # 4) add sensor noise
+        if self.noise_std > 0:
+            C_total += np.random.normal(0, self.noise_std, size=C_total.shape)
 
+        # ensure non-negative
+        C_total = np.clip(C_total, 0, None)
+
+        return C_total
 

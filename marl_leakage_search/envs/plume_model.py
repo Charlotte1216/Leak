@@ -4,85 +4,59 @@ plume_model.py
 """
 import numpy as np
 
-
-class GaussianPlume2D:
+class GaussianPlumeModel2D:
     """
-    2D Gaussian Plume Model (steady-state, constant wind)
-
-    Assumptions:
-    - Wind direction along +x
-    - Ground-level release
-    - Time-averaged concentration field
+    2D Gaussian plume model (simplified).
+    Concentration from multiple sources:
+        C_plume(x,y) = sum_i Q_i/(2*pi*sigma_y*u) * exp(-(y-y_i)^2/(2*sigma_y^2)) * exp(-(x-x_i)/L)
     """
 
-    def __init__(
-        self,
-        Q=1.0,               # emission rate
-        U=1.0,               # wind speed
-        sigma_y0=0.1,        # base lateral dispersion
-        alpha=0.1,           # dispersion growth rate
-        decay_length=50.0    # effective decay length
-    ):
-        self.Q = Q
-        self.U = U
-        self.sigma_y0 = sigma_y0
-        self.alpha = alpha
-        self.decay_length = decay_length
-
-    def sigma_y(self, x):
+    def __init__(self, u=1.0, L=100.0, sigma_y=5.0):
         """
-        Lateral dispersion coefficient
+        Parameters:
+        - u: wind speed (assumed constant along x direction)
+        - L: downstream attenuation length scale
+        - sigma_y: lateral dispersion coefficient (can be constant or a function)
         """
-        return self.sigma_y0 + self.alpha * np.maximum(x, 0.0)
+        self.u = u
+        self.L = L
+        self.sigma_y = sigma_y
 
-    def concentration(self, x, y, source):
+    def sigma_y_func(self, dx):
         """
-        Compute plume concentration from a single source.
-
-        Parameters
-        ----------
-        x, y : ndarray or float
-            Spatial coordinates
-        source : dict
-            {'x': float, 'y': float, 'Q': optional}
-
-        Returns
-        -------
-        C : ndarray or float
-            Concentration value
+        Dispersion parameter.
+        You can extend to be distance-dependent later.
         """
-        xs, ys = source["x"], source["y"]
-        Q = source.get("Q", self.Q)
+        return self.sigma_y
 
-        # Shift coordinates
-        dx = x - xs
-        dy = y - ys
+    def concentration_from_source(self, x, y, source):
+        """
+        Calculate concentration field from a single source.
 
-        # Upwind region has zero concentration
-        mask = dx > 0
-        C = np.zeros_like(dx, dtype=float)
+        source: dict with keys {"x": , "y": , "Q": }
+        """
+        dx = x - source["x"]
+        dy = y - source["y"]
 
-        if not np.any(mask):
-            return C
+        # Only consider downstream (wind in +x direction)
+        downstream = dx > 0
+        C = np.zeros_like(x, dtype=float)
 
-        sigma_y = self.sigma_y(dx[mask])
-
-        C[mask] = (
-            Q
-            / (np.sqrt(2 * np.pi) * self.U * sigma_y)
-            * np.exp(-0.5 * (dy[mask] / sigma_y) ** 2)
-            * np.exp(-dx[mask] / self.decay_length)
-        )
-
+        if np.any(downstream):
+            sigma_y = self.sigma_y_func(dx[downstream])
+            C[downstream] = (
+                source["Q"]
+                / (2.0 * np.pi * sigma_y * self.u)
+                * np.exp(-0.5 * (dy[downstream] / sigma_y) ** 2)
+                * np.exp(-dx[downstream] / self.L)
+            )
         return C
 
-    def multi_source_concentration(self, x, y, sources):
+    def calculate_concentration(self, x, y, sources):
         """
-        Superposition of multiple emission sources.
+        Calculate total concentration from all sources.
         """
         C_total = np.zeros_like(x, dtype=float)
-        for src in sources:
-            C_total += self.concentration(x, y, src)
+        for s in sources:
+            C_total += self.concentration_from_source(x, y, s)
         return C_total
-
-
