@@ -1,2 +1,41 @@
 # train_config.yaml
+# 训练配置参数
 
+# 训练基本参数
+training:
+  num_episodes: 1000  # 训练回合数
+  max_steps_per_episode: 1000  # 每个回合的最大步数
+  save_interval: 100  # 模型保存间隔（回合数）
+  eval_interval: 50  # 评估间隔（回合数）
+  log_interval: 10  # 日志记录间隔（回合数）
+
+# MARL 算法配置
+marl:
+  algorithm: "mappo"  # 可选: "mappo", "qmix"
+  
+  # MAPPO 特定参数
+  mappo:
+    gamma: 0.99  # 折扣因子
+    gae_lambda: 0.95  # GAE lambda 参数
+  
+  # QMIX 特定参数
+  qmix:
+    gamma: 0.99  # 折扣因子
+    mixer_lr: 3e-4  # 混合网络学习率
+    tau: 0.005  # 软更新参数
+    global_state_dim: 64  # 全局状态维度（需要根据环境调整）
+
+# 环境配置
+environment:
+  num_agents: 2  # 智能体数量
+  state_dim: 64  # 状态维度（需要根据环境调整）
+  action_dim: 8  # 动作维度（8个方向）
+
+# 输出配置
+output:
+  save_dir: "./checkpoints"  # 模型保存目录
+  log_dir: "./logs"  # 日志保存目录
+  tensorboard_dir: "./runs"  # TensorBoard 日志目录
+
+# 随机种子
+seed: 42

@@ -1,2 +1,48 @@
 # agent_config.yaml
+# 智能体配置参数
 
+# 网络结构配置
+network:
+  type: "ffnn"  # 可选: "ffnn", "lstm", "transformer"
+  hidden_dims: [128, 128]  # 隐藏层维度
+  activation: "relu"  # 激活函数: "relu", "tanh"
+  
+  # LSTM 特定参数
+  lstm:
+    hidden_dim: 128
+    lstm_hidden_dim: 64
+    num_layers: 1
+  
+  # Transformer 特定参数
+  transformer:
+    hidden_dim: 128
+    num_heads: 4
+    num_layers: 2
+    seq_len: 10
+
+# 算法配置
+algorithm: "ppo"  # 可选: "ppo", "dqn"
+
+# 学习参数
+learning:
+  lr: 3e-4  # 学习率
+  gamma: 0.99  # 折扣因子
+  batch_size: 64  # 批次大小
+  
+  # DQN 特定参数
+  dqn:
+    epsilon: 1.0  # 初始探索率
+    epsilon_min: 0.01  # 最小探索率
+    epsilon_decay: 0.995  # 探索率衰减
+    tau: 0.005  # 软更新参数
+    replay_buffer_size: 10000  # 经验回放缓冲区大小
+  
+  # PPO 特定参数
+  ppo:
+    clip: 0.2  # PPO 裁剪参数
+    epochs: 4  # PPO 更新轮数
+    value_coef: 0.5  # 价值损失系数
+    entropy_coef: 0.01  # 熵损失系数
+
+# 设备配置
+device: "cuda"  # 可选: "cuda", "cpu"
