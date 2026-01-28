@@ -3,7 +3,7 @@
 
 # 训练基本参数
 training:
-  num_episodes: 1000  # 训练回合数
+  num_episodes: 5000  # 训练回合数
   max_steps_per_episode: 1000  # 每个回合的最大步数
   save_interval: 100  # 模型保存间隔（回合数）
   eval_interval: 50  # 评估间隔（回合数）
@@ -38,4 +38,4 @@ output:
   tensorboard_dir: "./runs"  # TensorBoard 日志目录
 
 # 随机种子
-seed: 42
+seed: 422402

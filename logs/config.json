@@ -1,6 +1,6 @@
 {
   "training": {
-    "num_episodes": 1000,
+    "num_episodes": 5000,
     "max_steps_per_episode": 1000,
     "save_interval": 100,
     "log_interval": 10,
@@ -77,5 +77,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 42
+  "seed": 422402
 }

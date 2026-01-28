@@ -5,7 +5,9 @@ Multi-agent training entry point for gas leak localization.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import logging
 import os
 import random
 from pathlib import Path
@@ -18,6 +20,10 @@ import yaml
 from marl_leakage_search.agents.marl_agent import MARLAgent
 from marl_leakage_search.agents.marl_trainer import MARLTrainer
 from marl_leakage_search.envs.marl_env import PlumeEnv
+
+EXPERIMENT_LOG_DIR = Path(
+    "C:/Users/Charlotte/NewStart/EXP/GaosiLeak/marl_leakage_search/experiments/Train_network"
+)
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -127,8 +133,42 @@ def _save_json(payload: Dict[str, Any], path: Path) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
+def _setup_logging(log_dir: Path, log_file: str) -> logging.Logger:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("marl_train")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
-def train_loop(trainer: MARLTrainer, env: PlumeEnv, cfg: Dict[str, Any]) -> None:
+    if not logger.handlers:
+        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+
+        file_handler = logging.FileHandler(log_dir / log_file, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+
+    return logger
+
+
+def _append_avg_reward(csv_path: Path, episode: int, avg_reward: float) -> None:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = csv_path.exists()
+    with csv_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["episode", "avg_reward"])
+        writer.writerow([episode, f"{avg_reward:.6f}"])
+
+def train_loop(
+    trainer: MARLTrainer,
+    env: PlumeEnv,
+    cfg: Dict[str, Any],
+    logger: logging.Logger,
+    avg_reward_csv: Path,
+) -> None:
     training_cfg = cfg["training"]
     num_episodes = int(training_cfg["num_episodes"])
     max_steps = int(training_cfg["max_steps_per_episode"])
@@ -224,12 +264,13 @@ def train_loop(trainer: MARLTrainer, env: PlumeEnv, cfg: Dict[str, Any]) -> None
             avg_reward = float(np.mean(trainer.training_stats["episode_rewards"][-log_interval:]))
             avg_length = float(np.mean(trainer.training_stats["episode_lengths"][-log_interval:]))
             avg_loss = float(np.mean(trainer.training_stats["losses"][-log_interval:]))
-            print(
+            logger.info(
                 f"Episode {episode + 1}/{num_episodes} | "
                 f"Avg Reward: {avg_reward:.2f} | "
                 f"Avg Length: {avg_length:.2f} | "
                 f"Avg Loss: {avg_loss:.4f}"
             )
+            _append_avg_reward(avg_reward_csv, episode + 1, avg_reward)
 
         if (episode + 1) % save_interval == 0:
             checkpoint_dir = save_dir / f"episode_{episode + 1}"
@@ -313,7 +354,16 @@ def main() -> None:
     Path(output_cfg["log_dir"]).mkdir(parents=True, exist_ok=True)
     _save_json(config, Path(output_cfg["log_dir"]) / "config.json")
 
-    train_loop(trainer, env, config)
+    lr_value = float(agent_hparams.get("lr", 0.0))
+    gamma_value = float(agent_hparams.get("gamma", 0.0))
+    batch_size = int(agent_hparams.get("batch_size", 0))
+    file_tag = f"seed{seed}_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
+
+    log_file = f"{file_tag}.log"
+    avg_reward_csv = EXPERIMENT_LOG_DIR / f"{file_tag}_avg_reward_trend.csv"
+    logger = _setup_logging(EXPERIMENT_LOG_DIR, log_file)
+
+    train_loop(trainer, env, config, logger, avg_reward_csv)
 
 
 if __name__ == "__main__":
