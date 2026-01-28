@@ -1,4 +1,320 @@
 """
 train.py
+Multi-agent training entry point for gas leak localization.
 """
+from __future__ import annotations
 
+import argparse
+import json
+import os
+import random
+from pathlib import Path
+from typing import Any, Dict
+
+import numpy as np
+import torch
+import yaml
+
+from marl_leakage_search.agents.marl_agent import MARLAgent
+from marl_leakage_search.agents.marl_trainer import MARLTrainer
+from marl_leakage_search.envs.marl_env import PlumeEnv
+
+
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "training": {
+        "num_episodes": 200,
+        "max_steps_per_episode": 500,
+        "save_interval": 50,
+        "log_interval": 10,
+    },
+    "marl": {
+        "algorithm": "mappo",  # "mappo" or "qmix"
+        "mappo": {"gamma": 0.99, "gae_lambda": 0.95},
+        "qmix": {"gamma": 0.99, "mixer_lr": 3e-4, "tau": 0.005},
+    },
+    "environment": {
+        "num_agents": 2,
+        "action_dim": 8,
+        "source_find_radius": 2.0,
+        "collision_penalty": 1.0,
+        "battery_penalty": 0.01,
+        "found_source_bonus": 5.0,
+        "done_bonus": 20.0,
+        "init_pos_mode": "random",
+    },
+    "agent": {
+        "algorithm": "ppo",  # "ppo" or "dqn"
+        "network_type": "ffnn",  # "ffnn", "lstm", "transformer"
+        "learning": {
+            "lr": 3e-4,
+            "gamma": 0.99,
+            "batch_size": 64,
+            "dqn": {
+                "epsilon": 1.0,
+                "epsilon_min": 0.01,
+                "epsilon_decay": 0.995,
+                "tau": 0.005,
+                "replay_buffer_size": 10000,
+            },
+            "ppo": {
+                "clip": 0.2,
+                "epochs": 4,
+                "value_coef": 0.5,
+                "entropy_coef": 0.01,
+            },
+        },
+        "device": "cuda",
+    },
+    "output": {
+        "save_dir": "./checkpoints",
+        "log_dir": "./logs",
+    },
+    "seed": 42,
+}
+
+
+def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def _load_yaml(path: str | None) -> Dict[str, Any]:
+    if not path:
+        return {}
+    cfg_path = Path(path)
+    if not cfg_path.exists():
+        return {}
+    with cfg_path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def _build_agent_config(agent_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    learning = agent_cfg.get("learning", {})
+    dqn_cfg = learning.get("dqn", {})
+    ppo_cfg = learning.get("ppo", {})
+
+    return {
+        "lr": float(learning.get("lr", 3e-4)),
+        "gamma": learning.get("gamma", 0.99),
+        "batch_size": learning.get("batch_size", 64),
+        "epsilon": dqn_cfg.get("epsilon", 1.0),
+        "epsilon_min": dqn_cfg.get("epsilon_min", 0.01),
+        "epsilon_decay": dqn_cfg.get("epsilon_decay", 0.995),
+        "tau": dqn_cfg.get("tau", 0.005),
+        "replay_buffer_size": dqn_cfg.get("replay_buffer_size", 10000),
+        "ppo_clip": ppo_cfg.get("clip", 0.2),
+        "ppo_epochs": ppo_cfg.get("epochs", 4),
+        "value_coef": ppo_cfg.get("value_coef", 0.5),
+        "entropy_coef": ppo_cfg.get("entropy_coef", 0.01),
+        "device": agent_cfg.get("device", "cuda"),
+    }
+
+
+def _save_json(payload: Dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
+def train_loop(trainer: MARLTrainer, env: PlumeEnv, cfg: Dict[str, Any]) -> None:
+    training_cfg = cfg["training"]
+    num_episodes = int(training_cfg["num_episodes"])
+    max_steps = int(training_cfg["max_steps_per_episode"])
+    save_interval = int(training_cfg["save_interval"])
+    log_interval = int(training_cfg["log_interval"])
+
+    output_cfg = cfg["output"]
+    save_dir = Path(output_cfg["save_dir"])
+    log_dir = Path(output_cfg["log_dir"])
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    for episode in range(num_episodes):
+        observations = env.reset()
+
+        for agent in trainer.agents:
+            agent.reset()
+            agent.train_mode()
+
+        if trainer.algorithm == "mappo":
+            trajectories = [dict(states=[], actions=[], rewards=[], dones=[], old_log_probs=[], values=[])
+                            for _ in range(trainer.num_agents)]
+        else:
+            batch_data = {
+                "states": [],
+                "actions": [],
+                "rewards": [],
+                "next_states": [],
+                "dones": [],
+                "global_states": [],
+                "next_global_states": [],
+            }
+
+        episode_reward = 0.0
+        episode_length = 0
+
+        for _step in range(max_steps):
+            actions = []
+            action_log_probs = []
+            values = []
+
+            for agent_idx, agent in enumerate(trainer.agents):
+                obs = observations[agent_idx]
+                if trainer.algorithm == "mappo":
+                    action, log_prob, value = agent.select_action_with_probs(obs)
+                    actions.append(action)
+                    action_log_probs.append(float(log_prob.cpu().numpy()))
+                    values.append(float(value.cpu().numpy()))
+                else:
+                    action = agent.select_action(obs, training=True)
+                    actions.append(action)
+
+            next_observations, rewards, done, _info = env.step(actions)
+            done_list = [done for _ in range(trainer.num_agents)]
+
+            if trainer.algorithm == "mappo":
+                for agent_idx in range(trainer.num_agents):
+                    trajectories[agent_idx]["states"].append(observations[agent_idx])
+                    trajectories[agent_idx]["actions"].append(actions[agent_idx])
+                    trajectories[agent_idx]["rewards"].append(rewards[agent_idx])
+                    trajectories[agent_idx]["dones"].append(done_list[agent_idx])
+                    trajectories[agent_idx]["old_log_probs"].append(action_log_probs[agent_idx])
+                    trajectories[agent_idx]["values"].append(values[agent_idx])
+            else:
+                global_state = trainer._get_global_state(observations)
+                next_global_state = trainer._get_global_state(next_observations)
+
+                batch_data["states"].append(observations)
+                batch_data["actions"].append(actions)
+                batch_data["rewards"].append(float(np.mean(rewards)))
+                batch_data["next_states"].append(next_observations)
+                batch_data["dones"].append(bool(done))
+                batch_data["global_states"].append(global_state)
+                batch_data["next_global_states"].append(next_global_state)
+
+            episode_reward += float(np.mean(rewards))
+            episode_length += 1
+            observations = next_observations
+
+            if done:
+                break
+
+        if trainer.algorithm == "mappo":
+            stats = trainer.train_step_mappo(trajectories)
+        else:
+            batch = trainer._prepare_qmix_batch(batch_data)
+            stats = trainer.train_step_qmix(batch)
+
+        trainer.training_stats["episode_rewards"].append(episode_reward)
+        trainer.training_stats["episode_lengths"].append(episode_length)
+        trainer.training_stats["losses"].append(stats.get("loss", 0.0))
+
+        if (episode + 1) % log_interval == 0:
+            avg_reward = float(np.mean(trainer.training_stats["episode_rewards"][-log_interval:]))
+            avg_length = float(np.mean(trainer.training_stats["episode_lengths"][-log_interval:]))
+            avg_loss = float(np.mean(trainer.training_stats["losses"][-log_interval:]))
+            print(
+                f"Episode {episode + 1}/{num_episodes} | "
+                f"Avg Reward: {avg_reward:.2f} | "
+                f"Avg Length: {avg_length:.2f} | "
+                f"Avg Loss: {avg_loss:.4f}"
+            )
+
+        if (episode + 1) % save_interval == 0:
+            checkpoint_dir = save_dir / f"episode_{episode + 1}"
+            trainer.save_models(str(checkpoint_dir))
+            _save_json(trainer.training_stats, log_dir / "training_stats.json")
+
+    trainer.save_models(str(save_dir / "final"))
+    _save_json(trainer.training_stats, log_dir / "training_stats.json")
+
+
+def main() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    default_field_dir = repo_root / "marl_leakage_search" / "envs" / "generated_fields"
+
+    parser = argparse.ArgumentParser(description="Train MARL agents for gas leak localization.")
+    parser.add_argument("--train-config", type=str, default=str(repo_root / "marl_leakage_search" / "configs" / "train_config.yaml"))
+    parser.add_argument("--agent-config", type=str, default=str(repo_root / "marl_leakage_search" / "configs" / "agent_config.yaml"))
+    parser.add_argument("--field-dir", type=str, default=str(default_field_dir))
+    args = parser.parse_args()
+
+    config = json.loads(json.dumps(DEFAULT_CONFIG))
+    config = _deep_update(config, _load_yaml(args.train_config))
+    config = _deep_update(config, {"agent": _load_yaml(args.agent_config)})
+
+    seed = int(config.get("seed", 42))
+    _set_seed(seed)
+
+    env_cfg = config["environment"]
+    env = PlumeEnv(
+        field_dir=args.field_dir,
+        num_agents=int(env_cfg.get("num_agents", 2)),
+        source_find_radius=float(env_cfg.get("source_find_radius", 2.0)),
+        collision_penalty=float(env_cfg.get("collision_penalty", 1.0)),
+        battery_penalty=float(env_cfg.get("battery_penalty", 0.01)),
+        found_source_bonus=float(env_cfg.get("found_source_bonus", 5.0)),
+        done_bonus=float(env_cfg.get("done_bonus", 20.0)),
+        init_pos_mode=str(env_cfg.get("init_pos_mode", "random")),
+        seed=seed,
+    )
+
+    initial_obs = env.reset()
+    state_dim = len(initial_obs[0])
+    action_dim = int(env_cfg.get("action_dim", 8))
+    num_agents = int(env_cfg.get("num_agents", 2))
+
+    agent_cfg = config["agent"]
+    agent_algorithm = str(agent_cfg.get("algorithm", "ppo")).lower()
+    network_type = str(agent_cfg.get("network", {}).get("type", agent_cfg.get("network_type", "ffnn"))).lower()
+
+    marl_algorithm = str(config["marl"].get("algorithm", "mappo")).lower()
+    if marl_algorithm == "mappo" and agent_algorithm != "ppo":
+        raise ValueError("MAPPO requires agents to use PPO.")
+    if marl_algorithm == "qmix" and agent_algorithm != "dqn":
+        raise ValueError("QMIX requires agents to use DQN.")
+
+    agent_hparams = _build_agent_config(agent_cfg)
+
+    agents = [
+        MARLAgent(
+            agent_id=i,
+            state_dim=state_dim,
+            action_dim=action_dim,
+            algorithm=agent_algorithm,
+            network_type=network_type,
+            config=agent_hparams,
+        )
+        for i in range(num_agents)
+    ]
+
+    if marl_algorithm == "mappo":
+        trainer_cfg = config["marl"].get("mappo", {})
+    else:
+        trainer_cfg = config["marl"].get("qmix", {})
+        trainer_cfg = dict(trainer_cfg)
+        trainer_cfg["global_state_dim"] = num_agents * state_dim
+
+    trainer = MARLTrainer(agents, env, algorithm=marl_algorithm, config=trainer_cfg)
+
+    output_cfg = config["output"]
+    Path(output_cfg["save_dir"]).mkdir(parents=True, exist_ok=True)
+    Path(output_cfg["log_dir"]).mkdir(parents=True, exist_ok=True)
+    _save_json(config, Path(output_cfg["log_dir"]) / "config.json")
+
+    train_loop(trainer, env, config)
+
+
+if __name__ == "__main__":
+    main()

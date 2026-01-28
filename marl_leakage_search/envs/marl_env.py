@@ -26,7 +26,7 @@ class PlumeEnv:
         num_agents: int = 2,
         source_find_radius: float = 2.0,
         collision_penalty: float = 1.0,
-        battery_penalty: float = 0.01,
+        battery_penalty: float = 0.00001, # 电池惩罚
         found_source_bonus: float = 5.0,
         done_bonus: float = 20.0,
         init_pos_mode: str = "random",

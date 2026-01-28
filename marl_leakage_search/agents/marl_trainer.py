@@ -1,4 +1,4 @@
-"""
+""" 
 marl_trainer.py
 多智能体强化学习训练器，实现 MAPPO 和 QMIX 训练逻辑
 """
@@ -157,7 +157,9 @@ class MARLTrainer:
                 delta = rewards[step] - values[step]
                 gae = delta
             else:
-                delta = rewards[step] + self.gamma * values[step + 1] - values[step]
+
+                next_val = values[step + 1] if step + 1 < len(values) else next_value
+                delta = rewards[step] + self.gamma * next_val - values[step]
                 gae = delta + self.gamma * self.gae_lambda * gae
             
             advantages[step] = gae
