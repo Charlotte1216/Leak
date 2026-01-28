@@ -21,9 +21,16 @@ from marl_leakage_search.agents.marl_agent import MARLAgent
 from marl_leakage_search.agents.marl_trainer import MARLTrainer
 from marl_leakage_search.envs.marl_env import PlumeEnv
 
-EXPERIMENT_LOG_DIR = Path(
-    "C:/Users/Charlotte/NewStart/EXP/GaosiLeak/marl_leakage_search/experiments/Train_network"
-)
+
+def _find_repo_root(start: Path) -> Path:
+    for parent in [start, *start.parents]:
+        if (parent / "marl_leakage_search").exists():
+            return parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
+EXPERIMENT_LOG_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_network"
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -282,12 +289,11 @@ def train_loop(
 
 
 def main() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    default_field_dir = repo_root / "marl_leakage_search" / "envs" / "generated_fields"
+    default_field_dir = REPO_ROOT / "marl_leakage_search" / "envs" / "generated_fields"
 
     parser = argparse.ArgumentParser(description="Train MARL agents for gas leak localization.")
-    parser.add_argument("--train-config", type=str, default=str(repo_root / "marl_leakage_search" / "configs" / "train_config.yaml"))
-    parser.add_argument("--agent-config", type=str, default=str(repo_root / "marl_leakage_search" / "configs" / "agent_config.yaml"))
+    parser.add_argument("--train-config", type=str, default=str(REPO_ROOT / "marl_leakage_search" / "configs" / "train_config.yaml"))
+    parser.add_argument("--agent-config", type=str, default=str(REPO_ROOT / "marl_leakage_search" / "configs" / "agent_config.yaml"))
     parser.add_argument("--field-dir", type=str, default=str(default_field_dir))
     args = parser.parse_args()
 

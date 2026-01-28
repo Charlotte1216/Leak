@@ -15,13 +15,18 @@ from typing import Dict, List, Tuple
 import numpy as np
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-TRAIN_SCRIPT = REPO_ROOT / "marl_leakage_search" / "scripts" / "train.py"
+def _find_repo_root(start: Path) -> Path:
+    for parent in [start, *start.parents]:
+        if (parent / "marl_leakage_search").exists():
+            return parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
+TRAIN_SCRIPT = Path("C:/Users/Charlotte/NewStart/EXP/GaosiLeak/train.py")
 DEFAULT_TRAIN_CFG = REPO_ROOT / "marl_leakage_search" / "configs" / "train_config.yaml"
 DEFAULT_AGENT_CFG = REPO_ROOT / "marl_leakage_search" / "configs" / "agent_config.yaml"
-EXPERIMENT_DIR = Path(
-    "C:/Users/Charlotte/NewStart/EXP/GaosiLeak/marl_leakage_search/experiments/Train_network"
-)
+EXPERIMENT_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_network"
 
 SEEDS = [42, 123, 256, 512, 1024]
 LEARNING_RATES = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2]
