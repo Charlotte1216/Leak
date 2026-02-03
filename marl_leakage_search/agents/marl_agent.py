@@ -27,10 +27,27 @@ class ReplayBuffer:
     """
     def __init__(self, capacity=10000):
         self.buffer = deque(maxlen=capacity)
+
+    @staticmethod
+    def _to_plain(value):
+        if torch.is_tensor(value):
+            value = value.detach().cpu()
+            if value.ndim == 0:
+                return value.item()
+            return value.numpy()
+        return value
     
     def push(self, state, action, reward, next_state, done):
         """存储一个经验元组"""
-        self.buffer.append((state, action, reward, next_state, done))
+        self.buffer.append(
+            (
+                self._to_plain(state),
+                int(self._to_plain(action)),
+                float(self._to_plain(reward)),
+                self._to_plain(next_state),
+                bool(self._to_plain(done)),
+            )
+        )
     
     def sample(self, batch_size):
         """随机采样一批经验"""

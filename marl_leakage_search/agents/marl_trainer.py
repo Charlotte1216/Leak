@@ -58,23 +58,19 @@ class QMIXMixer(nn.Module):
         """
         batch_size = q_values.shape[0]
         
-        # 第一层
+        # 第一层: [1, num_agents] x [num_agents, hidden_dim] -> [1, hidden_dim]
         w1 = torch.abs(self.hyper_w1(global_state))  # [batch_size, num_agents * hidden_dim]
-        w1 = w1.view(batch_size, self.num_agents, self.hidden_dim)
+        w1 = w1.view(batch_size, self.num_agents, self.hidden_dim)  # [batch_size, num_agents, hidden_dim]
         b1 = self.hyper_b1(global_state)  # [batch_size, hidden_dim]
-        b1 = b1.unsqueeze(1).expand(-1, self.num_agents, -1)  # [batch_size, num_agents, hidden_dim]
-        
-        q_values = q_values.unsqueeze(2)  # [batch_size, num_agents, 1]
-        hidden = F.elu(torch.bmm(w1, q_values) + b1)  # [batch_size, num_agents, hidden_dim]
-        hidden = hidden.sum(dim=1)  # [batch_size, hidden_dim]
-        
-        # 第二层
-        w2 = torch.abs(self.hyper_w2(global_state))  # [batch_size, hidden_dim]
-        w2 = w2.unsqueeze(1)  # [batch_size, 1, hidden_dim]
+
+        q_values = q_values.unsqueeze(1)  # [batch_size, 1, num_agents]
+        hidden = F.elu(torch.bmm(q_values, w1).squeeze(1) + b1)  # [batch_size, hidden_dim]
+
+        # 第二层: [1, hidden_dim] x [hidden_dim, 1] -> [1, 1]
+        w2 = torch.abs(self.hyper_w2(global_state)).unsqueeze(2)  # [batch_size, hidden_dim, 1]
         b2 = self.hyper_b2(global_state)  # [batch_size, 1]
-        
-        q_total = torch.bmm(w2, hidden.unsqueeze(2)) + b2.unsqueeze(2)  # [batch_size, 1, 1]
-        q_total = q_total.squeeze(2)  # [batch_size, 1]
+
+        q_total = torch.bmm(hidden.unsqueeze(1), w2).squeeze(1) + b2  # [batch_size, 1]
         
         return q_total
 
@@ -311,8 +307,15 @@ class MARLTrainer:
             target_q_total = self.target_mixer(target_q_values_flat, next_global_states_flat).view(batch_size, seq_len)
         
         # 计算目标
-        rewards_tensor = torch.FloatTensor(rewards).to(self.device)
-        dones_tensor = torch.FloatTensor(dones).to(self.device)
+        if torch.is_tensor(rewards):
+            rewards_tensor = rewards.to(self.device, dtype=torch.float32)
+        else:
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+
+        if torch.is_tensor(dones):
+            dones_tensor = dones.to(self.device, dtype=torch.float32)
+        else:
+            dones_tensor = torch.tensor(dones, dtype=torch.float32, device=self.device)
         targets = rewards_tensor + (1 - dones_tensor) * self.gamma * target_q_total
         
         # 计算损失
@@ -336,9 +339,9 @@ class MARLTrainer:
                     agent.update_replay_buffer(
                         agent_states[b, t].cpu().numpy(),
                         agent_actions[b, t].item(),
-                        rewards[b, t],
+                        float(rewards[b, t].item()) if torch.is_tensor(rewards) else float(rewards[b, t]),
                         agent_next_states[b, t].cpu().numpy(),
-                        dones[b, t]
+                        bool(dones[b, t].item()) if torch.is_tensor(dones) else bool(dones[b, t])
                     )
             
             # 训练智能体

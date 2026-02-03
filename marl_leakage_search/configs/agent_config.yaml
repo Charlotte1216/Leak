@@ -21,7 +21,7 @@ network:
     seq_len: 10
 
 # 算法配置
-algorithm: "ppo"  # 可选: "ppo", "dqn"
+algorithm: "dqn"  # 可选: "ppo", "dqn"
 
 # 学习参数
 learning:

@@ -1,0 +1,4 @@
+2026-02-03 15:03:22,313 | INFO | Episode 10/5000 | Avg Reward: 16.42 | Avg Length: 323.70 | Avg Loss: 9285427788.8000
+2026-02-03 15:03:23,853 | INFO | Episode 20/5000 | Avg Reward: 8.44 | Avg Length: 299.30 | Avg Loss: 3999367257.6000
+2026-02-03 15:03:25,701 | INFO | Episode 30/5000 | Avg Reward: -4.03 | Avg Length: 341.50 | Avg Loss: 2555275929.6000
+2026-02-03 15:03:27,615 | INFO | Episode 40/5000 | Avg Reward: -0.21 | Avg Length: 318.30 | Avg Loss: 519243476.0000
