@@ -124,7 +124,7 @@ class MARLTrainer:
             self.target_mixer.load_state_dict(self.mixer.state_dict())
             
             # 混合网络优化器
-            self.mixer_optimizer = torch.optim.Adam(self.mixer.parameters(), lr=config.get('mixer_lr', 3e-4))
+            self.mixer_optimizer = torch.optim.Adam(self.mixer.parameters(), lr=float(config.get('mixer_lr', 3e-4)))
             self.tau = config.get('tau', 0.005)
         
         # 训练统计
@@ -279,7 +279,8 @@ class MARLTrainer:
             else:
                 q_vals = agent.q_net(agent_states_flat)
             
-            q_vals = q_vals.gather(1, agent_actions_flat.unsqueeze(1))
+            # q_vals = q_vals.gather(1, agent_actions_flat.unsqueeze(1))
+            q_vals = q_vals.gather(1, agent_actions_flat.unsqueeze(1).to(torch.long))
             q_values.append(q_vals.view(batch_size, seq_len, 1))
             
             # 目标 Q 值

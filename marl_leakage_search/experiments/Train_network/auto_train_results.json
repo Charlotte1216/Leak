@@ -1,0 +1,38 @@
+[
+  {
+    "seed": 42,
+    "lr": 1e-05,
+    "gamma": 0.9,
+    "batch_size": 64,
+    "trend_ok": false,
+    "slope": -8.49770913579632e-05,
+    "points": 1500
+  },
+  {
+    "seed": 42,
+    "lr": 1e-05,
+    "gamma": 0.9,
+    "batch_size": 32,
+    "trend_ok": true,
+    "slope": 4.673646165907518e-05,
+    "points": 1615
+  },
+  {
+    "seed": 42,
+    "lr": 1e-05,
+    "gamma": 0.95,
+    "batch_size": 32,
+    "trend_ok": false,
+    "slope": -8.49770913579632e-05,
+    "points": 1500
+  },
+  {
+    "seed": 42,
+    "lr": 1e-05,
+    "gamma": 0.9,
+    "batch_size": 128,
+    "trend_ok": false,
+    "slope": -8.49770913579632e-05,
+    "points": 1500
+  }
+]

@@ -36,7 +36,7 @@
     "learning": {
       "lr": 1e-05,
       "gamma": 0.9,
-      "batch_size": 32,
+      "batch_size": 128,
       "dqn": {
         "epsilon": 1.0,
         "epsilon_min": 0.01,

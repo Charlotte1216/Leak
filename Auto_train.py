@@ -14,6 +14,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def _find_repo_root(start: Path) -> Path:
     for parent in [start, *start.parents]:
@@ -36,6 +37,7 @@ BATCH_SIZES = [32, 64, 128]
 MIN_POINTS = 5
 MIN_DELTA = 0.1
 MIN_SLOPE = 0.0
+PARALLEL_JOBS = 4
 
 
 def _load_yaml(path: Path) -> Dict:
@@ -49,12 +51,34 @@ def _save_yaml(path: Path, payload: Dict) -> None:
         yaml.safe_dump(payload, f, sort_keys=False, allow_unicode=False)
 
 
-def _file_tag(seed: int, lr: float, gamma: float, batch_size: int) -> str:
-    return f"seed{seed}_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}"
+def _normalize_algorithm(value: object, default: str) -> str:
+    text = str(value).strip().lower()
+    return text if text else default
 
 
-def _avg_reward_csv_path(seed: int, lr: float, gamma: float, batch_size: int) -> Path:
-    return EXPERIMENT_DIR / f"{_file_tag(seed, lr, gamma, batch_size)}_avg_reward_trend.csv"
+def _file_tag(
+    seed: int,
+    agent_algorithm: str,
+    marl_algorithm: str,
+    lr: float,
+    gamma: float,
+    batch_size: int,
+) -> str:
+    return (
+        f"seed{seed}_agent{agent_algorithm}_marl{marl_algorithm}"
+        f"_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}"
+    )
+
+
+def _avg_reward_csv_path(
+    seed: int,
+    agent_algorithm: str,
+    marl_algorithm: str,
+    lr: float,
+    gamma: float,
+    batch_size: int,
+) -> Path:
+    return EXPERIMENT_DIR / f"{_file_tag(seed, agent_algorithm, marl_algorithm, lr, gamma, batch_size)}_avg_reward_trend.csv"
 
 
 def _read_avg_rewards(csv_path: Path) -> List[float]:
@@ -104,7 +128,7 @@ def _prepare_configs(
     gamma: float,
     batch_size: int,
     work_dir: Path,
-) -> Tuple[Path, Path]:
+) -> Tuple[Path, Path, str, str]:
     train_cfg = _load_yaml(DEFAULT_TRAIN_CFG)
     agent_cfg = _load_yaml(DEFAULT_AGENT_CFG)
 
@@ -114,52 +138,104 @@ def _prepare_configs(
     agent_cfg["learning"]["gamma"] = float(gamma)
     agent_cfg["learning"]["batch_size"] = int(batch_size)
 
-    tag = _file_tag(seed, lr, gamma, batch_size)
+    agent_algorithm = _normalize_algorithm(agent_cfg.get("algorithm"), "ppo")
+    marl_algorithm = _normalize_algorithm(train_cfg.get("marl", {}).get("algorithm"), "mappo")
+
+    tag = _file_tag(seed, agent_algorithm, marl_algorithm, lr, gamma, batch_size)
     train_cfg_path = work_dir / f"train_config_{tag}.yaml"
     agent_cfg_path = work_dir / f"agent_config_{tag}.yaml"
 
     _save_yaml(train_cfg_path, train_cfg)
     _save_yaml(agent_cfg_path, agent_cfg)
-    return train_cfg_path, agent_cfg_path
+    return train_cfg_path, agent_cfg_path, agent_algorithm, marl_algorithm
+
+
+def custom_json_encoder(obj):
+    if isinstance(obj, np.bool_):  # 处理 NumPy bool_ 类型
+        return bool(obj)
+    elif isinstance(obj, np.int64):  # 处理 NumPy int64 类型
+        return int(obj)
+    elif isinstance(obj, np.float32) or isinstance(obj, np.float64):  # 处理 NumPy float 类型
+        return float(obj)
+    elif isinstance(obj, np.ndarray):  # 处理 NumPy ndarray 类型
+        return obj.tolist()  # 转换为普通的 Python 列表
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
 def main() -> None:
     work_dir = EXPERIMENT_DIR / "auto_configs"
     work_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    stop_search = False
 
-    for seed, lr, gamma, batch_size in itertools.product(SEEDS, LEARNING_RATES, GAMMAS, BATCH_SIZES):
-        train_cfg_path, agent_cfg_path = _prepare_configs(seed, lr, gamma, batch_size, work_dir)
-        print(f"Running: seed={seed}, lr={lr}, gamma={gamma}, batch_size={batch_size}")
+    combos = list(itertools.product(SEEDS, LEARNING_RATES, GAMMAS, BATCH_SIZES))
 
-        code = _run_train(train_cfg_path, agent_cfg_path)
-        if code != 0:
-            print(f"Train failed with code {code}, skipping.")
-            continue
-
-        csv_path = _avg_reward_csv_path(seed, lr, gamma, batch_size)
-        rewards = _read_avg_rewards(csv_path)
-        ok, slope = _reward_trend_ok(rewards)
-        results.append(
-            {
-                "seed": seed,
-                "lr": lr,
-                "gamma": gamma,
-                "batch_size": batch_size,
-                "trend_ok": ok,
-                "slope": slope,
-                "points": len(rewards),
-            }
+    def _run_combo(seed: int, lr: float, gamma: float, batch_size: int):
+        train_cfg_path, agent_cfg_path, agent_algorithm, marl_algorithm = _prepare_configs(
+            seed, lr, gamma, batch_size, work_dir
         )
-        print(f"Trend ok={ok}, slope={slope:.6f}, points={len(rewards)}")
+        print(
+            "Running: "
+            f"seed={seed}, agent={agent_algorithm}, marl={marl_algorithm}, "
+            f"lr={lr}, gamma={gamma}, batch_size={batch_size}"
+        )
+        code = _run_train(train_cfg_path, agent_cfg_path)
+        return seed, agent_algorithm, marl_algorithm, lr, gamma, batch_size, code
 
-        if ok:
-            print("Found acceptable trend, stopping search.")
-            break
+    with ThreadPoolExecutor(max_workers=PARALLEL_JOBS) as executor:
+        combo_iter = iter(combos)
+        pending = []
+
+        def submit_next():
+            try:
+                seed, lr, gamma, batch_size = next(combo_iter)
+            except StopIteration:
+                return
+            future = executor.submit(_run_combo, seed, lr, gamma, batch_size)
+            pending.append(future)
+
+        for _ in range(PARALLEL_JOBS):
+            submit_next()
+
+        while pending:
+            for future in as_completed(list(pending)):
+                pending.remove(future)
+                seed, agent_algorithm, marl_algorithm, lr, gamma, batch_size, code = future.result()
+
+                if code != 0:
+                    print(f"Train failed with code {code}, skipping.")
+                else:
+                    csv_path = _avg_reward_csv_path(seed, agent_algorithm, marl_algorithm, lr, gamma, batch_size)
+                    rewards = _read_avg_rewards(csv_path)
+                    ok, slope = _reward_trend_ok(rewards)
+                    results.append(
+                        {
+                            "seed": seed,
+                            "agent_algorithm": agent_algorithm,
+                            "marl_algorithm": marl_algorithm,
+                            "lr": lr,
+                            "gamma": gamma,
+                            "batch_size": batch_size,
+                            "trend_ok": ok,
+                            "slope": slope,
+                            "points": len(rewards),
+                        }
+                    )
+                    print(f"Trend ok={ok}, slope={slope:.6f}, points={len(rewards)}")
+
+                    if ok:
+                        print("Found acceptable trend, stopping search.")
+                        stop_search = True
+
+                if not stop_search:
+                    submit_next()
+
+            if stop_search:
+                break
 
     results_path = EXPERIMENT_DIR / "auto_train_results.json"
     with results_path.open("w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, default=custom_json_encoder)
 
     if results:
         best = max(results, key=lambda r: (r["trend_ok"], r["slope"]))

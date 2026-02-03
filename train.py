@@ -363,7 +363,10 @@ def main() -> None:
     lr_value = float(agent_hparams.get("lr", 0.0))
     gamma_value = float(agent_hparams.get("gamma", 0.0))
     batch_size = int(agent_hparams.get("batch_size", 0))
-    file_tag = f"seed{seed}_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
+    file_tag = (
+        f"seed{seed}_agent{agent_algorithm}_marl{marl_algorithm}"
+        f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
+    )
 
     log_file = f"{file_tag}.log"
     avg_reward_csv = EXPERIMENT_LOG_DIR / f"{file_tag}_avg_reward_trend.csv"
