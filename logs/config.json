@@ -7,7 +7,7 @@
     "eval_interval": 50
   },
   "marl": {
-    "algorithm": "mappo",
+    "algorithm": "qmix",
     "mappo": {
       "gamma": 0.99,
       "gae_lambda": 0.95
@@ -16,7 +16,7 @@
       "gamma": 0.99,
       "mixer_lr": "3e-4",
       "tau": 0.005,
-      "global_state_dim": 64
+      "global_state_dim": 8
     }
   },
   "environment": {
@@ -28,15 +28,15 @@
     "found_source_bonus": 5.0,
     "done_bonus": 20.0,
     "init_pos_mode": "random",
-    "state_dim": 64
+    "state_dim": 4
   },
   "agent": {
-    "algorithm": "ppo",
+    "algorithm": "dqn",
     "network_type": "ffnn",
     "learning": {
-      "lr": "3e-4",
-      "gamma": 0.99,
-      "batch_size": 64,
+      "lr": 1e-05,
+      "gamma": 0.9,
+      "batch_size": 32,
       "dqn": {
         "epsilon": 1.0,
         "epsilon_min": 0.01,
@@ -53,7 +53,7 @@
     },
     "device": "cuda",
     "network": {
-      "type": "ffnn",
+      "type": "lstm",
       "hidden_dims": [
         128,
         128
@@ -77,5 +77,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 422402
+  "seed": 42
 }

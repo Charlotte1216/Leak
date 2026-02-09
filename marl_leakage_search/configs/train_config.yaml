@@ -23,12 +23,12 @@ marl:
     gamma: 0.99  # 折扣因子
     mixer_lr: 3e-4  # 混合网络学习率
     tau: 0.005  # 软更新参数
-    global_state_dim: 64  # 全局状态维度（需要根据环境调整）
+    global_state_dim: 8  # 当前环境下建议值= num_agents(2) * state_dim(4)；注意 train.py 里会按实际观测自动覆盖
 
 # 环境配置
 environment:
   num_agents: 2  # 智能体数量
-  state_dim: 64  # 状态维度（需要根据环境调整）
+  state_dim: 4  # 当前 marl_env 观测为 [x, y, conc, battery] 共4维；注意 train.py 会按 env.reset() 实际观测自动推断
   action_dim: 8  # 动作维度（8个方向）
 
 # 输出配置

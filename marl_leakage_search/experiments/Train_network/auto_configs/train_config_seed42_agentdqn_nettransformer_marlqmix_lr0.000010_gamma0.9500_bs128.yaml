@@ -1,0 +1,25 @@
+training:
+  num_episodes: 5000
+  max_steps_per_episode: 1000
+  save_interval: 100
+  eval_interval: 50
+  log_interval: 10
+marl:
+  algorithm: qmix
+  mappo:
+    gamma: 0.99
+    gae_lambda: 0.95
+  qmix:
+    gamma: 0.99
+    mixer_lr: 3e-4
+    tau: 0.005
+    global_state_dim: 8
+environment:
+  num_agents: 2
+  state_dim: 4
+  action_dim: 8
+output:
+  save_dir: ./checkpoints
+  log_dir: ./logs
+  tensorboard_dir: ./runs
+seed: 42

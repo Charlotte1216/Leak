@@ -146,14 +146,31 @@ class LSTMActorCriticNetwork(nn.Module):
             value: 状态价值
             new_hidden: 新的隐藏状态
         """
-        # 处理输入维度
+        # 处理输入维度，统一成 [batch_size, seq_len, input_dim]
         if len(x.shape) == 1:
-            x = x.unsqueeze(0).unsqueeze(0)  # [1, 1, input_dim]
+            x = x.view(1, 1, -1)
         elif len(x.shape) == 2:
-            if x.shape[0] == self.input_dim:
-                x = x.unsqueeze(0).unsqueeze(0)  # [1, 1, input_dim]
-            else:
+            if x.shape[-1] == self.input_dim:
                 x = x.unsqueeze(1)  # [batch_size, 1, input_dim]
+            elif x.shape[0] == self.input_dim:
+                # 兼容错误转置输入: [input_dim, batch_size]
+                x = x.transpose(0, 1).unsqueeze(1)  # [batch_size, 1, input_dim]
+            else:
+                raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
+        elif len(x.shape) == 3:
+            if x.shape[-1] != self.input_dim:
+                if x.shape[-2] == self.input_dim:
+                    x = x.transpose(-1, -2)
+                else:
+                    raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
+        else:
+            # 兼容多余维度: 展平前导维度，只保留最后一个特征维
+            if x.shape[-1] == self.input_dim:
+                x = x.reshape(-1, 1, self.input_dim)
+            elif x.shape[-2] == self.input_dim:
+                x = x.transpose(-1, -2).reshape(-1, 1, self.input_dim)
+            else:
+                raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
         
         batch_size, seq_len, _ = x.shape
         
@@ -161,10 +178,18 @@ class LSTMActorCriticNetwork(nn.Module):
         features = self.feature_extractor(x)  # [batch_size, seq_len, hidden_dim]
         
         # LSTM
-        if hidden is None:
-            hidden = self.hidden_state if self.hidden_state is not None else None
-        
+        use_cached_hidden = hidden is None
+        if hidden is None and self.hidden_state is not None:
+            cached_h, _cached_c = self.hidden_state
+            # Cached hidden may come from online rollout (batch=1). Ignore it for batch training.
+            if cached_h.size(1) == batch_size:
+                hidden = self.hidden_state
+
         lstm_out, new_hidden = self.lstm(features, hidden)  # [batch_size, seq_len, lstm_hidden_dim]
+
+        # Keep recurrent state only for online inference.
+        if use_cached_hidden and batch_size == 1:
+            self.hidden_state = (new_hidden[0].detach(), new_hidden[1].detach())
         
         # 取最后一个时间步的输出
         lstm_out = lstm_out[:, -1, :]  # [batch_size, lstm_hidden_dim]
@@ -394,14 +419,29 @@ class LSTMDQNNetwork(nn.Module):
             q_values: 每个动作的 Q 值
             new_hidden: 新的隐藏状态
         """
-        # 处理输入维度
+        # 处理输入维度，统一成 [batch_size, seq_len, input_dim]
         if len(x.shape) == 1:
-            x = x.unsqueeze(0).unsqueeze(0)
+            x = x.view(1, 1, -1)
         elif len(x.shape) == 2:
-            if x.shape[0] == self.input_dim:
-                x = x.unsqueeze(0).unsqueeze(0)
-            else:
+            if x.shape[-1] == self.input_dim:
                 x = x.unsqueeze(1)
+            elif x.shape[0] == self.input_dim:
+                x = x.transpose(0, 1).unsqueeze(1)
+            else:
+                raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
+        elif len(x.shape) == 3:
+            if x.shape[-1] != self.input_dim:
+                if x.shape[-2] == self.input_dim:
+                    x = x.transpose(-1, -2)
+                else:
+                    raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
+        else:
+            if x.shape[-1] == self.input_dim:
+                x = x.reshape(-1, 1, self.input_dim)
+            elif x.shape[-2] == self.input_dim:
+                x = x.transpose(-1, -2).reshape(-1, 1, self.input_dim)
+            else:
+                raise ValueError(f"Unexpected LSTM input shape {tuple(x.shape)} for input_dim={self.input_dim}")
         
         batch_size, seq_len, _ = x.shape
         
@@ -409,10 +449,16 @@ class LSTMDQNNetwork(nn.Module):
         features = self.feature_extractor(x)
         
         # LSTM
-        if hidden is None:
-            hidden = self.hidden_state if self.hidden_state is not None else None
-        
+        use_cached_hidden = hidden is None
+        if hidden is None and self.hidden_state is not None:
+            cached_h, _cached_c = self.hidden_state
+            if cached_h.size(1) == batch_size:
+                hidden = self.hidden_state
+
         lstm_out, new_hidden = self.lstm(features, hidden)
+
+        if use_cached_hidden and batch_size == 1:
+            self.hidden_state = (new_hidden[0].detach(), new_hidden[1].detach())
         lstm_out = lstm_out[:, -1, :]
         
         # Q 值

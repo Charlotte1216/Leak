@@ -266,9 +266,10 @@ class MARLAgent:
         for epoch in range(self.ppo_epochs):
             # 前向传播
             if self.network_type == 'lstm':
-                # 对于 LSTM，需要处理序列
+                # PPO 按样本批训练时不复用 rollout 的隐藏状态，避免 batch 维度不匹配
+                self.policy_net.hidden_state = None
                 _, new_log_probs, entropy, values, _ = self.policy_net.get_action_and_value(
-                    states, actions
+                    states, actions, hidden=None
                 )
             else:
                 _, new_log_probs, entropy, values = self.policy_net.get_action_and_value(
@@ -319,7 +320,8 @@ class MARLAgent:
         
         # 当前 Q 值
         if self.network_type == 'lstm':
-            current_q_values, _ = self.q_net(states)
+            self.q_net.hidden_state = None
+            current_q_values, _ = self.q_net(states, hidden=None)
         else:
             current_q_values = self.q_net(states)
         
@@ -328,7 +330,8 @@ class MARLAgent:
         # 目标 Q 值
         with torch.no_grad():
             if self.network_type == 'lstm':
-                next_q_values, _ = self.target_q_net(next_states)
+                self.target_q_net.hidden_state = None
+                next_q_values, _ = self.target_q_net(next_states, hidden=None)
             else:
                 next_q_values = self.target_q_net(next_states)
             

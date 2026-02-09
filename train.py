@@ -364,7 +364,7 @@ def main() -> None:
     gamma_value = float(agent_hparams.get("gamma", 0.0))
     batch_size = int(agent_hparams.get("batch_size", 0))
     file_tag = (
-        f"seed{seed}_agent{agent_algorithm}_marl{marl_algorithm}"
+        f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}"
         f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
     )
 
