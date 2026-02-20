@@ -1,0 +1,32 @@
+network:
+  type: lstm
+  hidden_dims:
+  - 128
+  - 128
+  activation: relu
+  lstm:
+    hidden_dim: 128
+    lstm_hidden_dim: 64
+    num_layers: 1
+  transformer:
+    hidden_dim: 128
+    num_heads: 4
+    num_layers: 2
+    seq_len: 10
+algorithm: ppo
+learning:
+  lr: 0.005
+  gamma: 0.95
+  batch_size: 64
+  dqn:
+    epsilon: 1.0
+    epsilon_min: 0.01
+    epsilon_decay: 0.995
+    tau: 0.005
+    replay_buffer_size: 10000
+  ppo:
+    clip: 0.2
+    epochs: 4
+    value_coef: 0.5
+    entropy_coef: 0.01
+device: cuda

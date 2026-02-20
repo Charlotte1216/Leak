@@ -11,7 +11,7 @@ training:
 
 # MARL 算法配置
 marl:
-  algorithm: "qmix"  # 可选: "mappo", "qmix"
+  algorithm: "mappo"  # 可选: "mappo", "qmix"
   
   # MAPPO 特定参数
   mappo:

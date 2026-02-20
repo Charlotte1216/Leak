@@ -5,6 +5,7 @@ Generate and save random concentration fields as .npz files.
 import math
 import os
 import random
+import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -58,7 +59,7 @@ def generate_concentration_field(
     grid_size: Tuple[int, int] = (100, 100),
     x_range: Tuple[float, float] = (0.0, 100.0),
     y_range: Tuple[float, float] = (0.0, 100.0),
-    source_count_range: Tuple[int, int] = (1, 6),
+    source_count_range: Tuple[int, int] = (4, 5),
     obstacle_count_range: Tuple[int, int] = (1, 4),
     wind_speed_range: Tuple[float, float] = (0.5, 3.0),
     source_q_range: Tuple[float, float] = (5.0, 15.0),
@@ -152,6 +153,16 @@ def generate_multiple(
     Generate and save multiple random concentration fields.
     Returns list of saved file paths.
     """
+    output_path = Path(output_dir)
+    if output_path.exists():
+        for item in output_path.iterdir():
+            if item.is_file() or item.is_symlink():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+    else:
+        output_path.mkdir(parents=True, exist_ok=True)
+
     saved = []
     for _ in range(num_fields):
         data = generate_concentration_field(**kwargs)
@@ -162,4 +173,4 @@ def generate_multiple(
 if __name__ == "__main__":
     # Example usage
     output_dir = os.path.join(os.path.dirname(__file__), "generated_fields")
-    generate_multiple(num_fields=20, output_dir=output_dir)
+    generate_multiple(num_fields=100, output_dir=output_dir)

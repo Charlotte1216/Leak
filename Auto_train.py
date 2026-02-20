@@ -172,7 +172,6 @@ def main() -> None:
     work_dir = EXPERIMENT_DIR / "auto_configs"
     work_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    stop_search = False
 
     combos = list(itertools.product(SEEDS, LEARNING_RATES, GAMMAS, BATCH_SIZES))
 
@@ -231,23 +230,26 @@ def main() -> None:
                         }
                     )
                     print(f"Trend ok={ok}, slope={slope:.6f}, points={len(rewards)}")
-
-                    if ok:
-                        print("Found acceptable trend, stopping search.")
-                        stop_search = True
-
-                if not stop_search:
-                    submit_next()
-
-            if stop_search:
-                break
+                submit_next()
 
     results_path = EXPERIMENT_DIR / "auto_train_results.json"
     with results_path.open("w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=custom_json_encoder)
 
+    ranked_results = sorted(
+        results,
+        key=lambda r: (r.get("trend_ok", False), r.get("slope", float("-inf")), r.get("points", 0)),
+        reverse=True,
+    )
+    ranked_payload = [
+        dict(item, rank=idx + 1) for idx, item in enumerate(ranked_results)
+    ]
+    ranked_path = EXPERIMENT_DIR / "auto_train_results_ranked.json"
+    with ranked_path.open("w", encoding="utf-8") as f:
+        json.dump(ranked_payload, f, indent=2, default=custom_json_encoder)
+
     if results:
-        best = max(results, key=lambda r: (r["trend_ok"], r["slope"]))
+        best = ranked_results[0]
         print("Best config:", best)
     else:
         print("No successful runs were recorded.")

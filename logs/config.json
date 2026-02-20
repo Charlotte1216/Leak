@@ -7,7 +7,7 @@
     "eval_interval": 50
   },
   "marl": {
-    "algorithm": "qmix",
+    "algorithm": "mappo",
     "mappo": {
       "gamma": 0.99,
       "gae_lambda": 0.95
@@ -31,12 +31,12 @@
     "state_dim": 4
   },
   "agent": {
-    "algorithm": "dqn",
+    "algorithm": "ppo",
     "network_type": "ffnn",
     "learning": {
-      "lr": 1e-05,
-      "gamma": 0.9,
-      "batch_size": 32,
+      "lr": 0.05,
+      "gamma": 0.99,
+      "batch_size": 128,
       "dqn": {
         "epsilon": 1.0,
         "epsilon_min": 0.01,
@@ -77,5 +77,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 42
+  "seed": 1024
 }
