@@ -28,8 +28,17 @@ marl:
 # 环境配置
 environment:
   num_agents: 2  # 智能体数量
-  state_dim: 4  # 当前 marl_env 观测为 [x, y, conc, battery] 共4维；注意 train.py 会按 env.reset() 实际观测自动推断
+  state_dim: 4  # 当前 marl_env 观测默认为 [x, y, conc, battery] 共4维；开启 observe_wind 后会增加 3 维
   action_dim: 8  # 动作维度（8个方向）
+  source_find_radius: 5.0  # source find radius
+  collision_penalty: 1.0  # collision penalty
+  battery_penalty: 0.001  # battery penalty
+  found_source_bonus: 20.0  # found source bonus
+  done_bonus: 0.0  # done bonus
+  enable_collision: true  # 是否启用与障碍物的碰撞检测/惩罚
+  stop_on_collision: false  # 碰撞时是否停止无人机（仅在启用碰撞时生效）
+  observe_wind: true  # 观测中是否包含风速与风向 (wind_speed, cos, sin)
+  init_pos_mode: "random"  # init position mode
 
 # 输出配置
 output:

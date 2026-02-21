@@ -59,9 +59,10 @@ def generate_concentration_field(
     grid_size: Tuple[int, int] = (100, 100),
     x_range: Tuple[float, float] = (0.0, 100.0),
     y_range: Tuple[float, float] = (0.0, 100.0),
-    source_count_range: Tuple[int, int] = (4, 5),
+    source_count_range: Tuple[int, int] = (4, 4),
     obstacle_count_range: Tuple[int, int] = (1, 4),
     wind_speed_range: Tuple[float, float] = (0.5, 3.0),
+    wind_dir_range: Tuple[float, float] = (0.0, 2.0 * math.pi),
     source_q_range: Tuple[float, float] = (5.0, 15.0),
     obstacle_radius_range: Tuple[float, float] = (2.0, 10.0),
     plume_params: Dict[str, float] = None,
@@ -81,6 +82,7 @@ def generate_concentration_field(
     num_sources = random.randint(source_count_range[0], source_count_range[1])
     num_obstacles = random.randint(obstacle_count_range[0], obstacle_count_range[1])
     wind_speed = random.uniform(*wind_speed_range)
+    wind_dir = random.uniform(*wind_dir_range)
 
     sources = _random_sources(num_sources, x_range, y_range, source_q_range)
     obstacles = _random_obstacles(num_obstacles, x_range, y_range, obstacle_radius_range)
@@ -92,6 +94,7 @@ def generate_concentration_field(
         sources=sources,
         obstacles=obstacles,
         wind_speed=wind_speed,
+        wind_dir=wind_dir,
         plume_params=plume_params,
         vortex_params=vortex_params,
         noise_std=noise_std,
@@ -111,6 +114,7 @@ def generate_concentration_field(
         "sources": sources_array,
         "obstacles": obstacles_array,
         "wind_speed": np.array([wind_speed], dtype=float),
+        "wind_dir": np.array([wind_dir], dtype=float),
         "plume_params": np.array([plume_params], dtype=object),
         "vortex_params": np.array([vortex_params], dtype=object),
         "noise_std": np.array([noise_std], dtype=float),

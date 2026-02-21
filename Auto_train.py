@@ -29,10 +29,15 @@ DEFAULT_TRAIN_CFG = REPO_ROOT / "marl_leakage_search" / "configs" / "train_confi
 DEFAULT_AGENT_CFG = REPO_ROOT / "marl_leakage_search" / "configs" / "agent_config.yaml"
 EXPERIMENT_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_network"
 
-SEEDS = [42, 123, 256, 512, 1024]
-LEARNING_RATES = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2]
-GAMMAS = [0.9, 0.95, 0.99]
-BATCH_SIZES = [32, 64, 128]
+# SEEDS = [42, 123, 256, 512, 1024]
+# LEARNING_RATES = [1e-3, 5e-3, 1e-2, 5e-2]
+# GAMMAS = [0.9, 0.95, 0.99]
+# BATCH_SIZES = [64]
+
+SEEDS = [42]
+LEARNING_RATES = [3e-3,1e-4,5e-4]
+GAMMAS = [0.9]
+BATCH_SIZES = [64]
 
 MIN_POINTS = 5
 MIN_DELTA = 0.1

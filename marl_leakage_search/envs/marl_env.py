@@ -4,6 +4,7 @@ marl_env.py
 
 import os
 import random
+import math
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -24,11 +25,14 @@ class PlumeEnv:
         self,
         field_dir: str,
         num_agents: int = 2,
-        source_find_radius: float = 3.0, # 发现源的半径
+        source_find_radius: float = 5.0, # 发现源的半径
         collision_penalty: float = 0.2, # 碰撞惩罚
         battery_penalty: float = 0.00001, # 电池惩罚
-        found_source_bonus: float = 10.0, # 发现源奖励
-        done_bonus: float = 20.0, # 完成任务奖励
+        found_source_bonus: float = 20.0, # 发现源奖励
+        done_bonus: float = 0.0, # 完成任务奖励
+        enable_collision: bool = True, # 是否启用与障碍物的碰撞检测/惩罚
+        stop_on_collision: bool = True, # 碰撞时是否停止无人机
+        observe_wind: bool = False, # 观测中是否包含风速/风向
         init_pos_mode: str = "random",
         seed: int = None,
         uav_params: Dict = None,
@@ -40,6 +44,9 @@ class PlumeEnv:
         self.battery_penalty = float(battery_penalty)
         self.found_source_bonus = float(found_source_bonus)
         self.done_bonus = float(done_bonus)
+        self.enable_collision = bool(enable_collision)
+        self.stop_on_collision = bool(stop_on_collision)
+        self.observe_wind = bool(observe_wind)
         self.init_pos_mode = init_pos_mode
         self.rng = random.Random(seed)
 
@@ -50,6 +57,7 @@ class PlumeEnv:
         self.sources = None
         self.obstacles = None
         self.wind_speed = None
+        self.wind_dir = None
         self.x_vals = None
         self.y_vals = None
         self.found_sources = None
@@ -72,6 +80,12 @@ class PlumeEnv:
         self.sources = data.get("sources", np.zeros((0, 3), dtype=float))
         self.obstacles = data.get("obstacles", np.zeros((0, 3), dtype=float))
         self.wind_speed = float(data.get("wind_speed", [1.0])[0])
+        if "wind_dir" in data:
+            self.wind_dir = float(data.get("wind_dir", [0.0])[0])
+        elif "wind_direction" in data:
+            self.wind_dir = float(data.get("wind_direction", [0.0])[0])
+        else:
+            self.wind_dir = 0.0
         self.x_vals = data.get("x")
         self.y_vals = data.get("y")
 
@@ -96,6 +110,11 @@ class PlumeEnv:
 
         rewards = []
         prev_batteries = [uav.battery for uav in self.uavs]
+        collision_terms = [0.0] * self.num_agents
+        conc_terms = [0.0] * self.num_agents
+        found_terms = [0.0] * self.num_agents
+        battery_terms = [0.0] * self.num_agents
+        done_terms = [0.0] * self.num_agents
 
         for idx, (uav, act) in enumerate(zip(self.uavs, action)):
             if not uav.is_battery_empty():
@@ -105,35 +124,48 @@ class PlumeEnv:
             uav.x, uav.y = self._clip_position(uav.x, uav.y)
 
             # collision check
-            collided = self._check_collision(uav.x, uav.y)
+            collided = self.enable_collision and self._check_collision(uav.x, uav.y)
             if collided:
-                rewards.append(-self.collision_penalty)
-                # stop UAV on collision
-                uav.vx = 0.0
-                uav.vy = 0.0
+                collision_terms[idx] = -self.collision_penalty
+                rewards.append(collision_terms[idx])
+                if self.stop_on_collision:
+                    # stop UAV on collision
+                    uav.vx = 0.0
+                    uav.vy = 0.0
             else:
                 rewards.append(0.0)
 
         # compute concentration-based rewards and found sources
         for i, uav in enumerate(self.uavs):
             conc = self._sample_concentration(uav.x, uav.y)
-            rewards[i] += conc
+            conc_terms[i] = conc
+            rewards[i] += conc_terms[i]
 
             newly_found = self._update_found_sources(uav.x, uav.y)
             if newly_found > 0:
-                rewards[i] += self.found_source_bonus * newly_found
+                found_terms[i] = self.found_source_bonus * newly_found
+                rewards[i] += found_terms[i]
 
             # battery penalty based on consumption
-            rewards[i] -= (prev_batteries[i] - uav.battery) * self.battery_penalty
+            battery_terms[i] = -(prev_batteries[i] - uav.battery) * self.battery_penalty
+            rewards[i] += battery_terms[i]
 
         done = self.is_done()
         if done:
+            done_terms = [self.done_bonus for _ in range(self.num_agents)]
             rewards = [r + self.done_bonus for r in rewards]
 
         next_state = self._get_observations()
         info = {
             "found_sources": int(self.found_sources.sum()),
             "total_sources": int(len(self.sources)),
+            "reward_components": {
+                "collision": collision_terms,
+                "concentration": conc_terms,
+                "found_bonus": found_terms,
+                "battery": battery_terms,
+                "done_bonus": done_terms,
+            },
         }
         return next_state, rewards, done, info
 
@@ -219,7 +251,10 @@ class PlumeEnv:
         obs = []
         for uav in self.uavs:
             conc = self._sample_concentration(uav.x, uav.y)
-            obs.append(np.array([uav.x, uav.y, conc, uav.battery], dtype=float))
+            payload = [uav.x, uav.y, conc, uav.battery]
+            if self.observe_wind:
+                payload.extend([self.wind_speed, math.cos(self.wind_dir), math.sin(self.wind_dir)])
+            obs.append(np.array(payload, dtype=float))
         return obs
 
     def _sample_init_pos(self) -> Tuple[float, float]:

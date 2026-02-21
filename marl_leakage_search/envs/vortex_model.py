@@ -31,7 +31,7 @@ class KarmanVortexStreet:
         self.beta = beta
         self.phase = phase
 
-    def perturbation(self, x, y, t=0.0, obstacle=None):
+    def perturbation(self, x, y, t=0.0, obstacle=None, wind_dir=0.0):
         """
         Calculate the vortex perturbation term for points (x,y) at time t.
 
@@ -47,24 +47,30 @@ class KarmanVortexStreet:
         dx = x - xo
         dy = y - yo
 
-        downstream = (dx > r0) & (np.abs(dy) <= r0)
-        f = np.zeros_like(dx, dtype=float)
+        wind_dir = float(wind_dir)
+        cos_w = np.cos(wind_dir)
+        sin_w = np.sin(wind_dir)
+        xw = dx * cos_w + dy * sin_w
+        yw = -dx * sin_w + dy * cos_w
+
+        downstream = (xw > r0) & (np.abs(yw) <= r0)
+        f = np.zeros_like(xw, dtype=float)
 
         if np.any(downstream):
             # downstream attenuation
-            attenuation = np.exp(-self.decay * dx[downstream])
+            attenuation = np.exp(-self.decay * xw[downstream])
 
             # wake width grows with downstream distance
-            sigma_w = self.sigma_w0 + self.beta * dx[downstream]
+            sigma_w = self.sigma_w0 + self.beta * xw[downstream]
 
             # crosswind envelope
-            envelope = np.exp(-0.5 * (dy[downstream] / sigma_w) ** 2)
+            envelope = np.exp(-0.5 * (yw[downstream] / sigma_w) ** 2)
 
             # oscillatory phase
             phase = (
                     self.omega * t
-                    - self.kx * dx[downstream]
-                    + self.ky * dy[downstream]
+                    - self.kx * xw[downstream]
+                    + self.ky * yw[downstream]
                     + self.phase
             )
 

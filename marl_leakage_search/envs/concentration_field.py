@@ -18,6 +18,7 @@ class ConcentrationField:
         sources,
         obstacles=None,
         wind_speed=1.0,
+        wind_dir=0.0,
         plume_params=None,
         vortex_params=None,
         keep_plume_behind_obstacle=True,
@@ -33,11 +34,15 @@ class ConcentrationField:
         """
         self.sources = sources
         self.obstacles = obstacles if obstacles is not None else []
+        self.wind_dir = float(wind_dir)
+        self._cos = np.cos(self.wind_dir)
+        self._sin = np.sin(self.wind_dir)
 
         self.plume = GaussianPlumeModel2D(
             u=wind_speed,
             L=plume_params.get("L", 100.0),
-            sigma_y=plume_params.get("sigma_y", 5.0)
+            sigma_y=plume_params.get("sigma_y", 5.0),
+            wind_dir=self.wind_dir,
         )
 
         self.vortex = KarmanVortexStreet(**(vortex_params or {}))
@@ -45,9 +50,11 @@ class ConcentrationField:
         self.keep_plume_behind_obstacle = keep_plume_behind_obstacle
         self.noise_std = noise_std
 
-    def _is_downstream(self, x, obstacle):
+    def _is_downstream(self, x, y, obstacle):
         dx = x - obstacle["x"]
-        return dx > obstacle.get("radius", 0.0)
+        dy = y - obstacle["y"]
+        downstream_dist = dx * self._cos + dy * self._sin
+        return downstream_dist > obstacle.get("radius", 0.0)
 
     def concentration(self, x, y, t=0.0):
         """
@@ -59,15 +66,15 @@ class ConcentrationField:
         # 2) apply obstacle blocking (optional)
         if not self.keep_plume_behind_obstacle:
             for obs in self.obstacles:
-                downstream = self._is_downstream(x, obs)
+                downstream = self._is_downstream(x, y, obs)
                 C_plume[downstream] = 0.0
 
         # 3) add vortex perturbation (only downstream of obstacles)
         C_total = C_plume.copy()
         for obs in self.obstacles:
-            downstream = self._is_downstream(x, obs)
+            downstream = self._is_downstream(x, y, obs)
             if np.any(downstream):
-                f_vortex = self.vortex.perturbation(x, y, t=t, obstacle=obs)
+                f_vortex = self.vortex.perturbation(x, y, t=t, obstacle=obs, wind_dir=self.wind_dir)
                 # only add perturbation downstream
                 C_total[downstream] = C_total[downstream] * (1 + f_vortex[downstream])
 

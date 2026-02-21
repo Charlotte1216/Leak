@@ -11,16 +11,20 @@ class GaussianPlumeModel2D:
         C_plume(x,y) = sum_i Q_i/(2*pi*sigma_y*u) * exp(-(y-y_i)^2/(2*sigma_y^2)) * exp(-(x-x_i)/L)
     """
 
-    def __init__(self, u=1.0, L=100.0, sigma_y=5.0):
+    def __init__(self, u=1.0, L=100.0, sigma_y=5.0, wind_dir=0.0):
         """
         Parameters:
         - u: wind speed (assumed constant along x direction)
         - L: downstream attenuation length scale
         - sigma_y: lateral dispersion coefficient (can be constant or a function)
+        - wind_dir: wind direction angle in radians (0 means +x direction)
         """
         self.u = u
         self.L = L
         self.sigma_y = sigma_y
+        self.wind_dir = float(wind_dir)
+        self._cos = np.cos(self.wind_dir)
+        self._sin = np.sin(self.wind_dir)
 
     def sigma_y_func(self, dx):
         """
@@ -38,17 +42,21 @@ class GaussianPlumeModel2D:
         dx = x - source["x"]
         dy = y - source["y"]
 
-        # Only consider downstream (wind in +x direction)
-        downstream = dx > 0
+        # Rotate into wind-aligned coordinates
+        xw = dx * self._cos + dy * self._sin
+        yw = -dx * self._sin + dy * self._cos
+
+        # Only consider downstream
+        downstream = xw > 0
         C = np.zeros_like(x, dtype=float)
 
         if np.any(downstream):
-            sigma_y = self.sigma_y_func(dx[downstream])
+            sigma_y = self.sigma_y_func(xw[downstream])
             C[downstream] = (
                 source["Q"]
                 / (2.0 * np.pi * sigma_y * self.u)
-                * np.exp(-0.5 * (dy[downstream] / sigma_y) ** 2)
-                * np.exp(-dx[downstream] / self.L)
+                * np.exp(-0.5 * (yw[downstream] / sigma_y) ** 2)
+                * np.exp(-xw[downstream] / self.L)
             )
         return C
 

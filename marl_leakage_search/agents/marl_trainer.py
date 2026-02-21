@@ -127,7 +127,8 @@ class MARLTrainer:
         self.training_stats = {
             'episode_rewards': [],
             'episode_lengths': [],
-            'losses': []
+            'losses': [],
+            'found_sources': []
         }
     
     def compute_gae(

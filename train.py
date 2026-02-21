@@ -160,14 +160,19 @@ def _setup_logging(log_dir: Path, log_file: str) -> logging.Logger:
     return logger
 
 
-def _append_avg_reward(csv_path: Path, episode: int, avg_reward: float) -> None:
+def _append_avg_reward(
+    csv_path: Path,
+    episode: int,
+    avg_reward: float,
+    avg_found_sources: float,
+) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = csv_path.exists()
     with csv_path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["episode", "avg_reward"])
-        writer.writerow([episode, f"{avg_reward:.6f}"])
+            writer.writerow(["episode", "avg_reward", "avg_found_sources"])
+        writer.writerow([episode, f"{avg_reward:.6f}", f"{avg_found_sources:.4f}"])
 
 def train_loop(
     trainer: MARLTrainer,
@@ -186,6 +191,8 @@ def train_loop(
     save_dir = Path(output_cfg["save_dir"])
     log_dir = Path(output_cfg["log_dir"])
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    trainer.training_stats.setdefault("found_sources", [])
 
     for episode in range(num_episodes):
         observations = env.reset()
@@ -263,21 +270,25 @@ def train_loop(
             batch = trainer._prepare_qmix_batch(batch_data)
             stats = trainer.train_step_qmix(batch)
 
+        episode_found_sources = int(env.found_sources.sum()) if env.found_sources is not None else 0
         trainer.training_stats["episode_rewards"].append(episode_reward)
         trainer.training_stats["episode_lengths"].append(episode_length)
         trainer.training_stats["losses"].append(stats.get("loss", 0.0))
+        trainer.training_stats["found_sources"].append(episode_found_sources)
 
         if (episode + 1) % log_interval == 0:
             avg_reward = float(np.mean(trainer.training_stats["episode_rewards"][-log_interval:]))
             avg_length = float(np.mean(trainer.training_stats["episode_lengths"][-log_interval:]))
             avg_loss = float(np.mean(trainer.training_stats["losses"][-log_interval:]))
+            avg_found_sources = float(np.mean(trainer.training_stats["found_sources"][-log_interval:]))
             logger.info(
                 f"Episode {episode + 1}/{num_episodes} | "
                 f"Avg Reward: {avg_reward:.2f} | "
                 f"Avg Length: {avg_length:.2f} | "
-                f"Avg Loss: {avg_loss:.4f}"
+                f"Avg Loss: {avg_loss:.4f} | "
+                f"Avg Found Sources: {avg_found_sources:.2f}"
             )
-            _append_avg_reward(avg_reward_csv, episode + 1, avg_reward)
+            _append_avg_reward(avg_reward_csv, episode + 1, avg_reward, avg_found_sources)
 
         if (episode + 1) % save_interval == 0:
             checkpoint_dir = save_dir / f"episode_{episode + 1}"

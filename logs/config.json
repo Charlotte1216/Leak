@@ -22,21 +22,24 @@
   "environment": {
     "num_agents": 2,
     "action_dim": 8,
-    "source_find_radius": 2.0,
+    "source_find_radius": 5.0,
     "collision_penalty": 1.0,
-    "battery_penalty": 0.01,
-    "found_source_bonus": 5.0,
-    "done_bonus": 20.0,
+    "battery_penalty": 0.001,
+    "found_source_bonus": 20.0,
+    "done_bonus": 0.0,
     "init_pos_mode": "random",
-    "state_dim": 4
+    "state_dim": 4,
+    "enable_collision": true,
+    "stop_on_collision": false,
+    "observe_wind": true
   },
   "agent": {
     "algorithm": "ppo",
     "network_type": "ffnn",
     "learning": {
-      "lr": 0.05,
-      "gamma": 0.99,
-      "batch_size": 128,
+      "lr": 0.0001,
+      "gamma": 0.9,
+      "batch_size": 64,
       "dqn": {
         "epsilon": 1.0,
         "epsilon_min": 0.01,
@@ -77,5 +80,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 1024
+  "seed": 42
 }

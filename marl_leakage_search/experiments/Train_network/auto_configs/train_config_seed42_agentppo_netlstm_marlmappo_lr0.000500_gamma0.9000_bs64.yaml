@@ -18,6 +18,15 @@ environment:
   num_agents: 2
   state_dim: 4
   action_dim: 8
+  source_find_radius: 5.0
+  collision_penalty: 1.0
+  battery_penalty: 0.001
+  found_source_bonus: 20.0
+  done_bonus: 0.0
+  enable_collision: true
+  stop_on_collision: false
+  observe_wind: true
+  init_pos_mode: random
 output:
   save_dir: ./checkpoints
   log_dir: ./logs
