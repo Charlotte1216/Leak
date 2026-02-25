@@ -4,6 +4,7 @@ training:
   save_interval: 100
   eval_interval: 50
   log_interval: 10
+  pretrained_dir: ''
 marl:
   algorithm: mappo
   mappo:

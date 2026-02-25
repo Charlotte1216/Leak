@@ -4,12 +4,13 @@
     "max_steps_per_episode": 1000,
     "save_interval": 100,
     "log_interval": 10,
+    "pretrained_dir": "",
     "eval_interval": 50
   },
   "marl": {
     "algorithm": "mappo",
     "mappo": {
-      "gamma": 0.99,
+      "gamma": 0.9,
       "gae_lambda": 0.95
     },
     "qmix": {
@@ -27,11 +28,14 @@
     "battery_penalty": 0.001,
     "found_source_bonus": 20.0,
     "done_bonus": 0.0,
-    "init_pos_mode": "random",
-    "state_dim": 4,
+    "success_done_bonus": 30.0,
+    "failure_done_penalty": 5.0,
     "enable_collision": true,
     "stop_on_collision": false,
-    "observe_wind": true
+    "observe_wind": true,
+    "distance_reward_scale": 1,
+    "init_pos_mode": "random",
+    "state_dim": 4
   },
   "agent": {
     "algorithm": "ppo",

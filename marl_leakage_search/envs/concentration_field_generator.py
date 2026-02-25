@@ -59,11 +59,14 @@ def generate_concentration_field(
     grid_size: Tuple[int, int] = (100, 100),
     x_range: Tuple[float, float] = (0.0, 100.0),
     y_range: Tuple[float, float] = (0.0, 100.0),
-    source_count_range: Tuple[int, int] = (4, 4),
-    obstacle_count_range: Tuple[int, int] = (1, 4),
-    wind_speed_range: Tuple[float, float] = (0.5, 3.0),
-    wind_dir_range: Tuple[float, float] = (0.0, 2.0 * math.pi),
-    source_q_range: Tuple[float, float] = (5.0, 15.0),
+    source_count_range: Tuple[int, int] = (1, 1),
+    obstacle_count_range: Tuple[int, int] = (0, 0),
+    # wind_speed_range: Tuple[float, float] = (0.5, 3.0),
+    wind_speed_range: Tuple[float, float] = (3.0, 3.0),
+    # wind_dir_range: Tuple[float, float] = (0.0, 2.0 * math.pi),
+    wind_dir_range: Tuple[float, float] = (0.0, 0.0),
+    # source_q_range: Tuple[float, float] = (5.0, 15.0),
+    source_q_range: Tuple[float, float] = (15.0, 15.0),
     obstacle_radius_range: Tuple[float, float] = (2.0, 10.0),
     plume_params: Dict[str, float] = None,
     vortex_params: Dict[str, float] = None,
@@ -144,6 +147,16 @@ def save_concentration_field(
     )
 
     file_path = output_path / file_name
+    if file_path.exists():
+        stem = file_path.stem
+        suffix = file_path.suffix
+        counter = 1
+        while True:
+            candidate = output_path / f"{stem}_{counter}{suffix}"
+            if not candidate.exists():
+                file_path = candidate
+                break
+            counter += 1
     np.savez_compressed(file_path, **data)
     return str(file_path)
 

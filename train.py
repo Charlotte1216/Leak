@@ -39,6 +39,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_steps_per_episode": 500,
         "save_interval": 50,
         "log_interval": 10,
+        "pretrained_dir": "",
     },
     "marl": {
         "algorithm": "mappo",  # "mappo" or "qmix"
@@ -53,6 +54,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "battery_penalty": 0.01,
         "found_source_bonus": 5.0,
         "done_bonus": 20.0,
+        "success_done_bonus": None,
+        "failure_done_penalty": 0.0,
+        "enable_collision": True,
+        "stop_on_collision": True,
+        "observe_wind": False,
+        "distance_reward_scale": 0.0,
         "init_pos_mode": "random",
     },
     "agent": {
@@ -193,6 +200,20 @@ def train_loop(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     trainer.training_stats.setdefault("found_sources", [])
+    trainer.training_stats.setdefault("success_episodes", [])
+    trainer.training_stats.setdefault("partial_success_episodes", [])
+    trainer.training_stats.setdefault(
+        "reward_components",
+        {
+            "collision": [],
+            "concentration": [],
+            "found_bonus": [],
+            "battery": [],
+            "distance": [],
+            "success_done": [],
+            "failure_done": [],
+        },
+    )
 
     for episode in range(num_episodes):
         observations = env.reset()
@@ -217,11 +238,20 @@ def train_loop(
 
         episode_reward = 0.0
         episode_length = 0
+        component_sums = {
+            "collision": 0.0,
+            "concentration": 0.0,
+            "found_bonus": 0.0,
+            "battery": 0.0,
+            "distance": 0.0,
+            "success_done": 0.0,
+            "failure_done": 0.0,
+        }
 
         for _step in range(max_steps):
             actions = []
             action_log_probs = []
-            values = []
+            critic_values = []
 
             for agent_idx, agent in enumerate(trainer.agents):
                 obs = observations[agent_idx]
@@ -229,13 +259,22 @@ def train_loop(
                     action, log_prob, value = agent.select_action_with_probs(obs)
                     actions.append(action)
                     action_log_probs.append(float(log_prob.cpu().numpy()))
-                    values.append(float(value.cpu().numpy()))
+                    critic_values.append(float(value.cpu().numpy()))
                 else:
                     action = agent.select_action(obs, training=True)
                     actions.append(action)
 
-            next_observations, rewards, done, _info = env.step(actions)
+            next_observations, rewards, done, info = env.step(actions)
             done_list = [done for _ in range(trainer.num_agents)]
+
+            if info and "reward_components" in info:
+                comps = info["reward_components"]
+                for key in component_sums:
+                    component_values = comps.get(key)
+                    if component_values is None:
+                        continue
+                    if len(component_values) > 0:
+                        component_sums[key] += float(np.mean(component_values))
 
             if trainer.algorithm == "mappo":
                 for agent_idx in range(trainer.num_agents):
@@ -244,7 +283,7 @@ def train_loop(
                     trajectories[agent_idx]["rewards"].append(rewards[agent_idx])
                     trajectories[agent_idx]["dones"].append(done_list[agent_idx])
                     trajectories[agent_idx]["old_log_probs"].append(action_log_probs[agent_idx])
-                    trajectories[agent_idx]["values"].append(values[agent_idx])
+                    trajectories[agent_idx]["values"].append(critic_values[agent_idx])
             else:
                 global_state = trainer._get_global_state(observations)
                 next_global_state = trainer._get_global_state(next_observations)
@@ -271,22 +310,49 @@ def train_loop(
             stats = trainer.train_step_qmix(batch)
 
         episode_found_sources = int(env.found_sources.sum()) if env.found_sources is not None else 0
+        total_sources = int(len(env.sources)) if env.sources is not None else 0
+        episode_success = 1 if (total_sources > 0 and episode_found_sources >= total_sources) else 0
+        episode_partial_success = 1 if episode_found_sources > 0 else 0
         trainer.training_stats["episode_rewards"].append(episode_reward)
         trainer.training_stats["episode_lengths"].append(episode_length)
         trainer.training_stats["losses"].append(stats.get("loss", 0.0))
         trainer.training_stats["found_sources"].append(episode_found_sources)
+        trainer.training_stats["success_episodes"].append(episode_success)
+        trainer.training_stats["partial_success_episodes"].append(episode_partial_success)
+        if episode_length > 0:
+            for key in component_sums:
+                trainer.training_stats["reward_components"][key].append(component_sums[key] / episode_length)
+        else:
+            for key in component_sums:
+                trainer.training_stats["reward_components"][key].append(0.0)
 
         if (episode + 1) % log_interval == 0:
             avg_reward = float(np.mean(trainer.training_stats["episode_rewards"][-log_interval:]))
             avg_length = float(np.mean(trainer.training_stats["episode_lengths"][-log_interval:]))
             avg_loss = float(np.mean(trainer.training_stats["losses"][-log_interval:]))
             avg_found_sources = float(np.mean(trainer.training_stats["found_sources"][-log_interval:]))
+            avg_success_rate = float(np.mean(trainer.training_stats["success_episodes"][-log_interval:]))
+            avg_partial_success_rate = float(np.mean(trainer.training_stats["partial_success_episodes"][-log_interval:]))
+            avg_components = {
+                key: float(np.mean(trainer.training_stats["reward_components"][key][-log_interval:]))
+                for key in component_sums
+            }
             logger.info(
                 f"Episode {episode + 1}/{num_episodes} | "
                 f"Avg Reward: {avg_reward:.2f} | "
                 f"Avg Length: {avg_length:.2f} | "
                 f"Avg Loss: {avg_loss:.4f} | "
-                f"Avg Found Sources: {avg_found_sources:.2f}"
+                f"Avg Found Sources: {avg_found_sources:.2f} | "
+                f"Success Rate: {avg_success_rate:.2%} | "
+                f"Partial Success Rate: {avg_partial_success_rate:.2%} | "
+                f"Avg Reward Components: "
+                f"conc={avg_components['concentration']:.2f}, "
+                f"found={avg_components['found_bonus']:.2f}, "
+                f"collision={avg_components['collision']:.2f}, "
+                f"battery={avg_components['battery']:.2f}, "
+                f"distance={avg_components['distance']:.2f}, "
+                f"success_done={avg_components['success_done']:.2f}, "
+                f"failure_done={avg_components['failure_done']:.2f}"
             )
             _append_avg_reward(avg_reward_csv, episode + 1, avg_reward, avg_found_sources)
 
@@ -306,6 +372,7 @@ def main() -> None:
     parser.add_argument("--train-config", type=str, default=str(REPO_ROOT / "marl_leakage_search" / "configs" / "train_config.yaml"))
     parser.add_argument("--agent-config", type=str, default=str(REPO_ROOT / "marl_leakage_search" / "configs" / "agent_config.yaml"))
     parser.add_argument("--field-dir", type=str, default=str(default_field_dir))
+    parser.add_argument("--pretrained-dir", type=str, default=None, help="Path to a checkpoint directory to load before training")
     args = parser.parse_args()
 
     config = json.loads(json.dumps(DEFAULT_CONFIG))
@@ -324,6 +391,16 @@ def main() -> None:
         battery_penalty=float(env_cfg.get("battery_penalty", 0.01)),
         found_source_bonus=float(env_cfg.get("found_source_bonus", 5.0)),
         done_bonus=float(env_cfg.get("done_bonus", 20.0)),
+        success_done_bonus=(
+            None
+            if env_cfg.get("success_done_bonus", None) is None
+            else float(env_cfg.get("success_done_bonus"))
+        ),
+        failure_done_penalty=float(env_cfg.get("failure_done_penalty", 0.0)),
+        enable_collision=bool(env_cfg.get("enable_collision", True)),
+        stop_on_collision=bool(env_cfg.get("stop_on_collision", True)),
+        observe_wind=bool(env_cfg.get("observe_wind", False)),
+        distance_reward_scale=float(env_cfg.get("distance_reward_scale", 0.0)),
         init_pos_mode=str(env_cfg.get("init_pos_mode", "random")),
         seed=seed,
     )
@@ -382,6 +459,17 @@ def main() -> None:
     log_file = f"{file_tag}.log"
     avg_reward_csv = EXPERIMENT_LOG_DIR / f"{file_tag}_avg_reward_trend.csv"
     logger = _setup_logging(EXPERIMENT_LOG_DIR, log_file)
+
+    pretrained_dir = args.pretrained_dir
+    if not pretrained_dir:
+        pretrained_dir = str(config.get("training", {}).get("pretrained_dir", "")).strip()
+
+    if pretrained_dir:
+        load_path = Path(pretrained_dir)
+        if not load_path.exists():
+            raise FileNotFoundError(f"Pretrained directory not found: {load_path}")
+        trainer.load_models(str(load_path))
+        logger.info(f"Loaded pretrained models from {load_path}")
 
     train_loop(trainer, env, config, logger, avg_reward_csv)
 

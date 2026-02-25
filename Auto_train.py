@@ -5,6 +5,7 @@ Stops early when reward trend looks increasing.
 """
 from __future__ import annotations
 
+import csv
 import itertools
 import json
 import subprocess
@@ -35,7 +36,7 @@ EXPERIMENT_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_netw
 # BATCH_SIZES = [64]
 
 SEEDS = [42]
-LEARNING_RATES = [3e-3,1e-4,5e-4]
+LEARNING_RATES = [1e-4]
 GAMMAS = [0.9]
 BATCH_SIZES = [64]
 
@@ -88,15 +89,57 @@ def _avg_reward_csv_path(
     return EXPERIMENT_DIR / f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size)}_avg_reward_trend.csv"
 
 
+def _experiment_log_path(
+    seed: int,
+    agent_algorithm: str,
+    network_type: str,
+    marl_algorithm: str,
+    lr: float,
+    gamma: float,
+    batch_size: int,
+) -> Path:
+    return EXPERIMENT_DIR / f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size)}.log"
+
+
+def _clear_previous_run_artifacts(
+    seed: int,
+    agent_algorithm: str,
+    network_type: str,
+    marl_algorithm: str,
+    lr: float,
+    gamma: float,
+    batch_size: int,
+) -> None:
+    for path in (
+        _avg_reward_csv_path(seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size),
+        _experiment_log_path(seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size),
+    ):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _read_avg_rewards(csv_path: Path) -> List[float]:
     if not csv_path.exists():
         return []
-    rows = np.loadtxt(csv_path, delimiter=",", skiprows=1)
-    if rows.size == 0:
-        return []
-    if rows.ndim == 1:
-        return [float(rows[1])]
-    return [float(x) for x in rows[:, 1]]
+    rewards: List[float] = []
+    with csv_path.open("r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header_skipped = False
+        for row in reader:
+            if not row:
+                continue
+            if not header_skipped:
+                header_skipped = True
+                continue
+            if len(row) < 2:
+                continue
+            try:
+                rewards.append(float(row[1]))
+            except ValueError:
+                continue
+    return rewards
 
 
 def _reward_trend_ok(rewards: List[float]) -> Tuple[bool, float]:
@@ -140,17 +183,27 @@ def _prepare_configs(
     agent_cfg = _load_yaml(DEFAULT_AGENT_CFG)
 
     train_cfg["seed"] = int(seed)
+    marl_cfg = train_cfg.setdefault("marl", {})
+    marl_algorithm = _normalize_algorithm(marl_cfg.get("algorithm"), "mappo")
+
     agent_cfg.setdefault("learning", {})
     agent_cfg["learning"]["lr"] = float(lr)
     agent_cfg["learning"]["gamma"] = float(gamma)
     agent_cfg["learning"]["batch_size"] = int(batch_size)
+
+    # Make gamma effective for the active MARL trainer (MAPPO/QMIX), not only the agent config.
+    if marl_algorithm == "mappo":
+        marl_cfg.setdefault("mappo", {})
+        marl_cfg["mappo"]["gamma"] = float(gamma)
+    elif marl_algorithm == "qmix":
+        marl_cfg.setdefault("qmix", {})
+        marl_cfg["qmix"]["gamma"] = float(gamma)
 
     agent_algorithm = _normalize_algorithm(agent_cfg.get("algorithm"), "ppo")
     network_type = _normalize_algorithm(
         agent_cfg.get("network", {}).get("type", agent_cfg.get("network_type", "ffnn")),
         "ffnn",
     )
-    marl_algorithm = _normalize_algorithm(train_cfg.get("marl", {}).get("algorithm"), "mappo")
 
     tag = _file_tag(seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size)
     train_cfg_path = work_dir / f"train_config_{tag}.yaml"
@@ -183,6 +236,9 @@ def main() -> None:
     def _run_combo(seed: int, lr: float, gamma: float, batch_size: int):
         train_cfg_path, agent_cfg_path, agent_algorithm, network_type, marl_algorithm = _prepare_configs(
             seed, lr, gamma, batch_size, work_dir
+        )
+        _clear_previous_run_artifacts(
+            seed, agent_algorithm, network_type, marl_algorithm, lr, gamma, batch_size
         )
         print(
             "Running: "

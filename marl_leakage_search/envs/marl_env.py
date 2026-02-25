@@ -30,9 +30,12 @@ class PlumeEnv:
         battery_penalty: float = 0.00001, # 电池惩罚
         found_source_bonus: float = 20.0, # 发现源奖励
         done_bonus: float = 0.0, # 完成任务奖励
+        success_done_bonus: float | None = None, # 成功完成奖励（找到全部源）
+        failure_done_penalty: float = 0.0, # 失败完成惩罚（电池耗尽）
         enable_collision: bool = True, # 是否启用与障碍物的碰撞检测/惩罚
         stop_on_collision: bool = True, # 碰撞时是否停止无人机
         observe_wind: bool = False, # 观测中是否包含风速/风向
+        distance_reward_scale: float = 0.0, # 距离源的密集奖励系数
         init_pos_mode: str = "random",
         seed: int = None,
         uav_params: Dict = None,
@@ -44,9 +47,12 @@ class PlumeEnv:
         self.battery_penalty = float(battery_penalty)
         self.found_source_bonus = float(found_source_bonus)
         self.done_bonus = float(done_bonus)
+        self.success_done_bonus = float(done_bonus if success_done_bonus is None else success_done_bonus)
+        self.failure_done_penalty = float(failure_done_penalty)
         self.enable_collision = bool(enable_collision)
         self.stop_on_collision = bool(stop_on_collision)
         self.observe_wind = bool(observe_wind)
+        self.distance_reward_scale = float(distance_reward_scale)
         self.init_pos_mode = init_pos_mode
         self.rng = random.Random(seed)
 
@@ -61,6 +67,7 @@ class PlumeEnv:
         self.x_vals = None
         self.y_vals = None
         self.found_sources = None
+        self._max_distance = None
 
     def reset(self):
         """
@@ -88,6 +95,8 @@ class PlumeEnv:
             self.wind_dir = 0.0
         self.x_vals = data.get("x")
         self.y_vals = data.get("y")
+        x_min, x_max, y_min, y_max = self._get_bounds()
+        self._max_distance = math.hypot(x_max - x_min, y_max - y_min)
 
         # initialize UAVs
         self.uavs = []
@@ -110,11 +119,18 @@ class PlumeEnv:
 
         rewards = []
         prev_batteries = [uav.battery for uav in self.uavs]
+        found_mask_snapshot = None if self.found_sources is None else self.found_sources.copy()
+        prev_nearest_distances = [
+            self._nearest_unfound_distance(uav.x, uav.y, found_mask=found_mask_snapshot)
+            for uav in self.uavs
+        ]
         collision_terms = [0.0] * self.num_agents
         conc_terms = [0.0] * self.num_agents
         found_terms = [0.0] * self.num_agents
         battery_terms = [0.0] * self.num_agents
-        done_terms = [0.0] * self.num_agents
+        success_done_terms = [0.0] * self.num_agents
+        failure_done_terms = [0.0] * self.num_agents
+        distance_terms = [0.0] * self.num_agents
 
         for idx, (uav, act) in enumerate(zip(self.uavs, action)):
             if not uav.is_battery_empty():
@@ -150,21 +166,41 @@ class PlumeEnv:
             battery_terms[i] = -(prev_batteries[i] - uav.battery) * self.battery_penalty
             rewards[i] += battery_terms[i]
 
-        done = self.is_done()
-        if done:
-            done_terms = [self.done_bonus for _ in range(self.num_agents)]
-            rewards = [r + self.done_bonus for r in rewards]
+            # Dense shaping reward: reward reduction in nearest-source distance.
+            if self.distance_reward_scale > 0.0 and self._max_distance and self._max_distance > 0:
+                prev_d = prev_nearest_distances[i]
+                curr_d = self._nearest_unfound_distance(uav.x, uav.y, found_mask=found_mask_snapshot)
+                if prev_d is not None and curr_d is not None:
+                    delta = (prev_d - curr_d) / self._max_distance
+                    distance_terms[i] = self.distance_reward_scale * float(delta)
+                    rewards[i] += distance_terms[i]
+
+        success_done = self.found_sources is not None and self.found_sources.all()
+        failure_done = all(uav.is_battery_empty() for uav in self.uavs) and not success_done
+        done = bool(success_done or failure_done)
+        if done and success_done:
+            success_done_terms = [self.success_done_bonus for _ in range(self.num_agents)]
+            rewards = [r + self.success_done_bonus for r in rewards]
+        elif done and failure_done:
+            failure_done_terms = [-self.failure_done_penalty for _ in range(self.num_agents)]
+            rewards = [r - self.failure_done_penalty for r in rewards]
 
         next_state = self._get_observations()
+        legacy_done_terms = [s + f for s, f in zip(success_done_terms, failure_done_terms)]
         info = {
             "found_sources": int(self.found_sources.sum()),
             "total_sources": int(len(self.sources)),
+            "success_done": bool(success_done),
+            "failure_done": bool(failure_done),
             "reward_components": {
                 "collision": collision_terms,
                 "concentration": conc_terms,
                 "found_bonus": found_terms,
                 "battery": battery_terms,
-                "done_bonus": done_terms,
+                "distance": distance_terms,
+                "success_done": success_done_terms,
+                "failure_done": failure_done_terms,
+                "done_bonus": legacy_done_terms,
             },
         }
         return next_state, rewards, done, info
@@ -310,3 +346,24 @@ class PlumeEnv:
                 self.found_sources[i] = True
                 newly_found += 1
         return newly_found
+
+    def _nearest_unfound_distance(
+        self,
+        x: float,
+        y: float,
+        found_mask: np.ndarray | None = None,
+    ) -> float | None:
+        if self.sources is None or len(self.sources) == 0:
+            return None
+        if found_mask is None:
+            found_mask = self.found_sources
+        if found_mask is None:
+            return None
+        d_min = None
+        for i, (sx, sy, _q) in enumerate(self.sources):
+            if found_mask[i]:
+                continue
+            d = math.hypot(x - sx, y - sy)
+            if d_min is None or d < d_min:
+                d_min = d
+        return d_min

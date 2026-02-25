@@ -8,6 +8,7 @@ training:
   save_interval: 100  # 模型保存间隔（回合数）
   eval_interval: 50  # 评估间隔（回合数）
   log_interval: 10  # 日志记录间隔（回合数）
+  pretrained_dir: ""  # 继续训练时加载的模型目录（如 ./checkpoints/final）
 
 # MARL 算法配置
 marl:
@@ -34,10 +35,13 @@ environment:
   collision_penalty: 1.0  # collision penalty
   battery_penalty: 0.001  # battery penalty
   found_source_bonus: 20.0  # found source bonus
-  done_bonus: 0.0  # done bonus
+  done_bonus: 0.0  # 兼容旧配置；若 success_done_bonus 为空则作为成功完成奖励使用
+  success_done_bonus: 30.0  # 找到全部源时奖励
+  failure_done_penalty: 5.0  # 电池耗尽导致结束时惩罚
   enable_collision: true  # 是否启用与障碍物的碰撞检测/惩罚
   stop_on_collision: false  # 碰撞时是否停止无人机（仅在启用碰撞时生效）
   observe_wind: true  # 观测中是否包含风速与风向 (wind_speed, cos, sin)
+  distance_reward_scale: 1  # 距离改善量奖励系数（变近为正，变远为负）
   init_pos_mode: "random"  # init position mode
 
 # 输出配置
