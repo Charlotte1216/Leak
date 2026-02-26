@@ -187,6 +187,7 @@ def train_loop(
     cfg: Dict[str, Any],
     logger: logging.Logger,
     avg_reward_csv: Path,
+    checkpoint_run_tag: str | None = None,
 ) -> None:
     training_cfg = cfg["training"]
     num_episodes = int(training_cfg["num_episodes"])
@@ -196,6 +197,9 @@ def train_loop(
 
     output_cfg = cfg["output"]
     save_dir = Path(output_cfg["save_dir"])
+    if checkpoint_run_tag:
+        # Group checkpoints by run hyperparameters so runs do not overwrite each other.
+        save_dir = save_dir / checkpoint_run_tag
     log_dir = Path(output_cfg["log_dir"])
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -471,7 +475,7 @@ def main() -> None:
         trainer.load_models(str(load_path))
         logger.info(f"Loaded pretrained models from {load_path}")
 
-    train_loop(trainer, env, config, logger, avg_reward_csv)
+    train_loop(trainer, env, config, logger, avg_reward_csv, checkpoint_run_tag=file_tag)
 
 
 if __name__ == "__main__":

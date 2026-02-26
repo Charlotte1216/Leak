@@ -10,7 +10,7 @@
   "marl": {
     "algorithm": "mappo",
     "mappo": {
-      "gamma": 0.9,
+      "gamma": 0.99,
       "gae_lambda": 0.95
     },
     "qmix": {
@@ -41,8 +41,8 @@
     "algorithm": "ppo",
     "network_type": "ffnn",
     "learning": {
-      "lr": 0.0001,
-      "gamma": 0.9,
+      "lr": 0.0005,
+      "gamma": 0.99,
       "batch_size": 64,
       "dqn": {
         "epsilon": 1.0,
@@ -60,7 +60,7 @@
     },
     "device": "cuda",
     "network": {
-      "type": "lstm",
+      "type": "ffnn",
       "hidden_dims": [
         128,
         128
@@ -84,5 +84,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 42
+  "seed": 1024
 }

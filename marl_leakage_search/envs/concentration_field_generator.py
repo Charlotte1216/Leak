@@ -59,7 +59,7 @@ def generate_concentration_field(
     grid_size: Tuple[int, int] = (100, 100),
     x_range: Tuple[float, float] = (0.0, 100.0),
     y_range: Tuple[float, float] = (0.0, 100.0),
-    source_count_range: Tuple[int, int] = (1, 1),
+    source_count_range: Tuple[int, int] = (4, 4),
     obstacle_count_range: Tuple[int, int] = (0, 0),
     # wind_speed_range: Tuple[float, float] = (0.5, 3.0),
     wind_speed_range: Tuple[float, float] = (3.0, 3.0),
