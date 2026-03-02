@@ -66,6 +66,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "found_source_stay_radius_scale": 1.0,
         "uav_params": {},
         "init_pos_mode": "random",
+        "dynamic_field": {
+            "enabled": False,
+            "dt": 1.0,
+            "keep_plume_behind_obstacle": True,
+            "wind": {
+                "enabled": False,
+                "speed_amplitude": 0.0,
+                "speed_frequency": 0.0,
+                "speed_phase": 0.0,
+                "dir_amplitude": 0.0,
+                "dir_frequency": 0.0,
+                "dir_phase": 0.0,
+            },
+            "vortex": {
+                "use_strouhal": False,
+                "strouhal": 0.2,
+            },
+        },
     },
     "agent": {
         "algorithm": "ppo",  # "ppo" or "dqn"
@@ -469,6 +487,7 @@ def main() -> None:
         init_pos_mode=str(env_cfg.get("init_pos_mode", "random")),
         seed=seed,
         uav_params=uav_params,
+        dynamic_field_config=env_cfg.get("dynamic_field", {}),
     )
 
     initial_obs = env.reset()

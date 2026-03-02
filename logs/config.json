@@ -46,6 +46,26 @@
       "dt": 1.0
     },
     "init_pos_mode": "random",
+    "dynamic_field": {
+      "enabled": true,
+      "dt": 1.0,
+      "keep_plume_behind_obstacle": true,
+      "wind": {
+        "enabled": true,
+        "speed_amplitude": 0.0,
+        "speed_frequency": 0.0,
+        "speed_phase": 0.0,
+        "dir_amplitude": 0.0,
+        "dir_frequency": 0.0,
+        "dir_phase": 0.0
+      },
+      "vortex": {
+        "use_strouhal": true,
+        "strouhal": 0.2,
+        "min_wind_speed": 0.001,
+        "min_diameter": 0.001
+      }
+    },
     "state_dim": 4
   },
   "agent": {

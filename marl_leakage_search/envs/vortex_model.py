@@ -20,7 +20,11 @@ class KarmanVortexStreet:
             decay=0.05,  # downstream attenuation
             sigma_w0=2.0,  # initial wake half-width
             beta=0.05,  # wake spreading rate
-            phase=0.0
+            phase=0.0,
+            use_strouhal=False,
+            strouhal=0.2,
+            min_wind_speed=1e-3,
+            min_diameter=1e-3,
     ):
         self.A = A
         self.omega = omega
@@ -30,8 +34,21 @@ class KarmanVortexStreet:
         self.sigma_w0 = sigma_w0
         self.beta = beta
         self.phase = phase
+        self.use_strouhal = bool(use_strouhal)
+        self.strouhal = float(strouhal)
+        self.min_wind_speed = float(min_wind_speed)
+        self.min_diameter = float(min_diameter)
 
-    def perturbation(self, x, y, t=0.0, obstacle=None, wind_dir=0.0):
+    def _wave_params(self, obstacle_radius, wind_speed):
+        if not self.use_strouhal:
+            return float(self.omega), float(self.kx)
+        diameter = max(2.0 * max(float(obstacle_radius), 0.0), self.min_diameter)
+        u = max(abs(float(wind_speed)), self.min_wind_speed)
+        omega = 2.0 * np.pi * self.strouhal * u / diameter
+        kx = omega / u
+        return omega, kx
+
+    def perturbation(self, x, y, t=0.0, obstacle=None, wind_dir=0.0, wind_speed=1.0):
         """
         Calculate the vortex perturbation term for points (x,y) at time t.
 
@@ -57,6 +74,8 @@ class KarmanVortexStreet:
         f = np.zeros_like(xw, dtype=float)
 
         if np.any(downstream):
+            omega, kx = self._wave_params(r0, wind_speed)
+
             # downstream attenuation
             attenuation = np.exp(-self.decay * xw[downstream])
 
@@ -68,8 +87,8 @@ class KarmanVortexStreet:
 
             # oscillatory phase
             phase = (
-                    self.omega * t
-                    - self.kx * xw[downstream]
+                    omega * t
+                    - kx * xw[downstream]
                     + self.ky * yw[downstream]
                     + self.phase
             )

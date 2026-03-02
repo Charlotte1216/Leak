@@ -1,64 +1,77 @@
 # train_config.yaml
-# 训练配置参数
+# 训练配置参数（每个字段都带中文说明和推荐取值范围）
 
-# 训练基本参数
 training:
-  num_episodes: 8000  # 训练回合数
-  max_steps_per_episode: 1000  # 每个回合的最大步数
-  save_interval: 100  # 模型保存间隔（回合数）
-  eval_interval: 50  # 评估间隔（回合数）
-  log_interval: 10  # 日志记录间隔（回合数）
-  pretrained_dir: ""  # 继续训练时加载的模型目录（如 ./checkpoints/final）
+  num_episodes: 8000  # 总训练回合数；推荐范围: 2000~20000（动态环境建议 >= 8000）
+  max_steps_per_episode: 1000  # 每回合最大步数；推荐范围: 300~1500
+  save_interval: 100  # 保存模型间隔（按回合）；推荐范围: 50~500
+  eval_interval: 50  # 评估间隔（按回合）；推荐范围: 20~200（如未使用评估也可保留）
+  log_interval: 10  # 日志打印间隔（按回合）；推荐范围: 5~50
+  pretrained_dir: ""  # 继续训练时加载的模型目录；推荐: "" 或 "./checkpoints/<run>/final"
 
-# MARL 算法配置
 marl:
-  algorithm: "mappo"  # 可选: "mappo", "qmix"
-  
-  # MAPPO 特定参数
+  algorithm: "mappo"  # 多智能体算法；可选: "mappo" / "qmix"；推荐: "mappo"
+
   mappo:
-    gamma: 0.99  # 折扣因子
-    gae_lambda: 0.95  # GAE lambda 参数
-  
-  # QMIX 特定参数
+    gamma: 0.99  # 折扣因子；推荐范围: 0.95~0.995（稀疏终局奖励常用 0.99）
+    gae_lambda: 0.95  # GAE 参数；推荐范围: 0.90~0.98
+
   qmix:
-    gamma: 0.99  # 折扣因子
-    mixer_lr: 3e-4  # 混合网络学习率
-    tau: 0.005  # 软更新参数
-    global_state_dim: 8  # 当前环境下建议值= num_agents(2) * state_dim(4)；注意 train.py 里会按实际观测自动覆盖
+    gamma: 0.99  # 折扣因子；推荐范围: 0.95~0.995
+    mixer_lr: 3e-4  # Mixer 学习率；推荐范围: 1e-4~1e-3
+    tau: 0.005  # Target 网络软更新系数；推荐范围: 0.001~0.02
+    global_state_dim: 8  # 全局状态维度；推荐: num_agents * 实际单智能体观测维度
 
-# 环境配置
 environment:
-  num_agents: 4  # 智能体数量
-  state_dim: 4  # 基础观测为 [x, y, conc, battery]；observe_velocity 增加 2 维，observe_wind 增加 3 维
-  action_dim: 8  # 动作维度（8个方向）
-  source_find_radius: 5.0  # source find radius
-  collision_penalty: 1.0  # collision penalty
-  battery_penalty: 0.001  # battery penalty
-  found_source_bonus: 20.0  # found source bonus
-  done_bonus: 0.0  # 兼容旧配置；若 success_done_bonus 为空则作为成功完成奖励使用
-  success_done_bonus: 120.0  # 找到全部源时奖励（提高终局奖励权重）
-  failure_done_penalty: 5.0  # 电池耗尽导致结束时惩罚
-  enable_collision: true  # 是否启用与障碍物的碰撞检测/惩罚
-  stop_on_collision: false  # 碰撞时是否停止无人机（仅在启用碰撞时生效）
-  observe_wind: true  # 观测中是否包含风速与风向 (wind_speed, cos, sin)
-  observe_velocity: true  # 观测中是否包含速度 (vx, vy)
-  distance_reward_scale: 6  # 距离改善量奖励系数（变近为正，变远为负）
-  found_source_concentration_scale: 0.05  # 已发现源附近浓度奖励缩放（<1 会抑制停留收益）
-  found_source_stay_penalty: 0.15  # 还有未发现源时，停留在已发现源附近的每步惩罚
-  found_source_stay_radius_scale: 1.5  # 停留判定半径 = source_find_radius * 该系数
-  uav_params:  # UAVDynamics 参数（已打通到 PlumeEnv）
-    max_speed: 5.0
-    max_acceleration: 1.0
-    max_battery: 150.0
-    energy_consumption_rate: 0.07
-    dt: 1.0
-  init_pos_mode: "random"  # init position mode
+  num_agents: 4  # 无人机数量；推荐范围: 2~8
+  state_dim: 4  # 基础观测维度 [x, y, conc, battery]；推荐: 4（如改观测需同步网络输入）
+  action_dim: 8  # 动作维度（8方向离散动作）；推荐: 固定 8
+  source_find_radius: 5.0  # 判定“找到源”的距离阈值；推荐范围: 3.0~8.0
+  collision_penalty: 1.0  # 碰撞惩罚；推荐范围: 0.2~3.0
+  battery_penalty: 0.001  # 电池消耗惩罚系数；推荐范围: 1e-5~1e-2
+  found_source_bonus: 20.0  # 每发现 1 个源的奖励；推荐范围: 10~80
+  done_bonus: 0.0  # 兼容旧字段；当 success_done_bonus 为空时使用；推荐范围: 0~200
+  success_done_bonus: 120.0  # 找到全部源的终局奖励；推荐范围: 50~400
+  failure_done_penalty: 5.0  # 电池耗尽导致结束时惩罚；推荐范围: 0~50
+  enable_collision: true  # 是否启用障碍碰撞检测与惩罚；推荐: true（有障碍时）
+  stop_on_collision: false  # 碰撞后是否将速度清零；推荐: false~true（更难任务可设 true）
+  observe_wind: true  # 观测是否包含风信息 [wind_speed, cos(wind_dir), sin(wind_dir)]；动态风建议 true
+  observe_velocity: true  # 观测是否包含速度 [vx, vy]；有动力学惯性建议 true
+  distance_reward_scale: 6  # 距离未发现源“变近”的密集奖励系数；推荐范围: 0~10
+  found_source_concentration_scale: 0.05  # 已发现源附近的浓度奖励缩放；推荐范围: 0.0~0.3
+  found_source_stay_penalty: 0.15  # 仍有未发现源时，在已发现源附近停留惩罚；推荐范围: 0.0~0.5
+  found_source_stay_radius_scale: 1.5  # 停留惩罚半径倍数（= source_find_radius * 该值）；推荐范围: 1.0~2.5
 
-# 输出配置
+  uav_params:
+    max_speed: 5.0  # 最大速度；推荐范围: 2.0~8.0
+    max_acceleration: 1.0  # 最大加速度；推荐范围: 0.5~3.0
+    max_battery: 150.0  # 最大电量；推荐范围: 80~300
+    energy_consumption_rate: 0.07  # 单位路程电耗；推荐范围: 0.01~0.2
+    dt: 1.0  # UAV 动力学时间步长；推荐范围: 0.5~1.0（通常与 dynamic_field.dt 协调）
+
+  init_pos_mode: "random"  # 初始位置模式；当前可选: "random"
+
+  dynamic_field:
+    enabled: true  # 是否启用动态浓度场；推荐: 静态预训练 false，动态微调 true
+    dt: 1.0  # 环境时间推进步长；推荐范围: 0.2~1.0
+    keep_plume_behind_obstacle: true  # 障碍物后方是否保留主烟羽；推荐: true
+    wind:
+      enabled: true  # 是否启用随时间变化的风速/风向；推荐: 课程训练从 false -> true
+      speed_amplitude: 0.0  # 风速振幅（绝对值）；推荐范围: 0.0~0.5*基准风速
+      speed_frequency: 0.0  # 风速变化频率（Hz，按每 step 推进 dt 秒）；推荐范围: 0.0~0.05
+      speed_phase: 0.0  # 风速初相位（弧度）；推荐范围: 0~6.283
+      dir_amplitude: 0.0  # 风向振幅（弧度）；推荐范围: 0.0~0.35（约 0~20 度）
+      dir_frequency: 0.0  # 风向变化频率（Hz）；推荐范围: 0.0~0.03
+      dir_phase: 0.0  # 风向初相位（弧度）；推荐范围: 0~6.283
+    vortex:
+      use_strouhal: true  # 是否按 Strouhal 数动态计算涡街频率；推荐: 动态场设 true
+      strouhal: 0.2  # Strouhal 数；推荐范围: 0.15~0.25
+      min_wind_speed: 0.001  # 计算波数时的最小风速保护；推荐范围: 1e-4~1e-2
+      min_diameter: 0.001  # 计算频率时的最小障碍直径保护；推荐范围: 1e-4~1e-1
+
 output:
-  save_dir: "./checkpoints"  # 模型保存目录
-  log_dir: "./logs"  # 日志保存目录
-  tensorboard_dir: "./runs"  # TensorBoard 日志目录
+  save_dir: "./checkpoints"  # 模型保存目录；推荐: 可写路径
+  log_dir: "./logs"  # 日志保存目录；推荐: 可写路径
+  tensorboard_dir: "./runs"  # TensorBoard 日志目录；推荐: 可写路径
 
-# 随机种子
-seed: 422402
+seed: 422402  # 随机种子；推荐: 固定整数（便于复现实验）

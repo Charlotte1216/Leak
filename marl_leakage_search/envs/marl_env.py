@@ -6,14 +6,16 @@ import os
 import random
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 try:
     from .uav_dynamics import UAVDynamics
+    from .concentration_field import ConcentrationField
 except ImportError:
     from uav_dynamics import UAVDynamics
+    from concentration_field import ConcentrationField
 
 
 class PlumeEnv:
@@ -43,6 +45,7 @@ class PlumeEnv:
         init_pos_mode: str = "random",
         seed: int = None,
         uav_params: Dict = None,
+        dynamic_field_config: Dict | None = None,
     ):
         self.field_dir = Path(field_dir)
         self.num_agents = num_agents
@@ -63,6 +66,10 @@ class PlumeEnv:
         self.found_source_stay_radius_scale = float(found_source_stay_radius_scale)
         self.init_pos_mode = init_pos_mode
         self.rng = random.Random(seed)
+        self.dynamic_field_config = dict(dynamic_field_config or {})
+        self.dynamic_field_enabled = bool(self.dynamic_field_config.get("enabled", False))
+        self.field_dt = float(self.dynamic_field_config.get("dt", 1.0))
+        self.field_time = 0.0
 
         self.uav_params = uav_params or {}
         self.uavs: List[UAVDynamics] = []
@@ -76,6 +83,7 @@ class PlumeEnv:
         self.y_vals = None
         self.found_sources = None
         self._max_distance = None
+        self._concentration_model: ConcentrationField | None = None
 
     def reset(self):
         """
@@ -86,25 +94,32 @@ class PlumeEnv:
 
         # load field data
         if "concentration_field" in data:
-            self.concentration = data["concentration_field"]
+            self.concentration = np.asarray(data["concentration_field"], dtype=float)
         elif "concentration" in data:
-            self.concentration = data["concentration"]
+            self.concentration = np.asarray(data["concentration"], dtype=float)
         else:
-            raise KeyError("Missing concentration field in .npz file")
+            if self.dynamic_field_enabled and "x" in data and "y" in data:
+                x_vals = np.asarray(data["x"], dtype=float)
+                y_vals = np.asarray(data["y"], dtype=float)
+                self.concentration = np.zeros((len(y_vals), len(x_vals)), dtype=float)
+            else:
+                raise KeyError("Missing concentration field in .npz file")
 
-        self.sources = data.get("sources", np.zeros((0, 3), dtype=float))
-        self.obstacles = data.get("obstacles", np.zeros((0, 3), dtype=float))
-        self.wind_speed = float(data.get("wind_speed", [1.0])[0])
+        self.sources = self._coerce_matrix(data.get("sources"), cols=3)
+        self.obstacles = self._coerce_matrix(data.get("obstacles"), cols=3)
+        self.wind_speed = self._extract_scalar(data, "wind_speed", 1.0)
         if "wind_dir" in data:
-            self.wind_dir = float(data.get("wind_dir", [0.0])[0])
+            self.wind_dir = self._extract_scalar(data, "wind_dir", 0.0)
         elif "wind_direction" in data:
-            self.wind_dir = float(data.get("wind_direction", [0.0])[0])
+            self.wind_dir = self._extract_scalar(data, "wind_direction", 0.0)
         else:
             self.wind_dir = 0.0
-        self.x_vals = data.get("x")
-        self.y_vals = data.get("y")
+        self.field_time = self._extract_scalar(data, "t", 0.0)
+        self.x_vals = np.asarray(data.get("x"), dtype=float) if data.get("x") is not None else None
+        self.y_vals = np.asarray(data.get("y"), dtype=float) if data.get("y") is not None else None
         x_min, x_max, y_min, y_max = self._get_bounds()
         self._max_distance = math.hypot(x_max - x_min, y_max - y_min)
+        self._concentration_model = self._build_dynamic_field_model(data)
 
         # initialize UAVs
         self.uavs = []
@@ -159,6 +174,9 @@ class PlumeEnv:
                     uav.vy = 0.0
             else:
                 rewards.append(0.0)
+
+        if self.dynamic_field_enabled:
+            self.field_time += self.field_dt
 
         # compute concentration-based rewards and found sources
         for i, uav in enumerate(self.uavs):
@@ -218,6 +236,9 @@ class PlumeEnv:
             "total_sources": int(len(self.sources)),
             "success_done": bool(success_done),
             "failure_done": bool(failure_done),
+            "field_time": float(self.field_time),
+            "wind_speed": float(self.wind_speed),
+            "wind_dir": float(self.wind_dir),
             "reward_components": {
                 "collision": collision_terms,
                 "concentration": conc_terms,
@@ -254,7 +275,16 @@ class PlumeEnv:
         else:
             extent = None
 
-        ax.imshow(self.concentration, origin="lower", extent=extent, cmap="plasma", aspect="auto")
+        concentration_to_plot = self.concentration
+        if self.dynamic_field_enabled and self._concentration_model is not None:
+            if self.x_vals is not None and self.y_vals is not None:
+                X, Y = np.meshgrid(self.x_vals, self.y_vals, indexing="xy")
+            else:
+                h, w = self.concentration.shape
+                X, Y = np.meshgrid(np.arange(w, dtype=float), np.arange(h, dtype=float), indexing="xy")
+            concentration_to_plot = self._concentration_model.concentration(X, Y, t=self.field_time)
+
+        ax.imshow(concentration_to_plot, origin="lower", extent=extent, cmap="plasma", aspect="auto")
 
         # Sources
         if self.sources is not None and len(self.sources) > 0:
@@ -310,6 +340,112 @@ class PlumeEnv:
         print(f"Randomly selected file: {file_path}")  # Debugging line to ensure randomness
         return dict(np.load(file_path, allow_pickle=True))
 
+    def _extract_scalar(self, data: Dict[str, Any], key: str, default: float) -> float:
+        value = data.get(key, None)
+        if value is None:
+            return float(default)
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                return float(default)
+            return float(np.asarray(value).reshape(-1)[0])
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _extract_dict(self, data: Dict[str, Any], key: str, default: Dict | None = None) -> Dict[str, Any]:
+        value = data.get(key, None)
+        if value is None:
+            return dict(default or {})
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                return dict(default or {})
+            maybe_dict = np.asarray(value).reshape(-1)[0]
+            if isinstance(maybe_dict, dict):
+                return dict(maybe_dict)
+        return dict(default or {})
+
+    def _coerce_matrix(self, value: Any, cols: int) -> np.ndarray:
+        if value is None:
+            return np.zeros((0, cols), dtype=float)
+        try:
+            arr = np.asarray(value, dtype=float)
+        except (TypeError, ValueError):
+            return np.zeros((0, cols), dtype=float)
+        if arr.size == 0:
+            return np.zeros((0, cols), dtype=float)
+        if arr.ndim == 1:
+            if arr.shape[0] % cols != 0:
+                return np.zeros((0, cols), dtype=float)
+            arr = arr.reshape(-1, cols)
+        else:
+            arr = arr.reshape(-1, arr.shape[-1])
+            if arr.shape[1] != cols:
+                return np.zeros((0, cols), dtype=float)
+        return arr
+
+    def _as_source_list(self) -> List[Dict[str, float]]:
+        if self.sources is None or len(self.sources) == 0:
+            return []
+        return [
+            {"x": float(sx), "y": float(sy), "Q": float(q)}
+            for sx, sy, q in self.sources
+        ]
+
+    def _as_obstacle_list(self) -> List[Dict[str, float]]:
+        if self.obstacles is None or len(self.obstacles) == 0:
+            return []
+        return [
+            {"x": float(ox), "y": float(oy), "radius": float(r)}
+            for ox, oy, r in self.obstacles
+        ]
+
+    def _build_dynamic_field_model(self, data: Dict[str, Any]) -> ConcentrationField | None:
+        if not self.dynamic_field_enabled:
+            return None
+
+        plume_params = self._extract_dict(
+            data,
+            "plume_params",
+            default={"L": 100.0, "sigma_y": 5.0},
+        )
+        vortex_params = self._extract_dict(data, "vortex_params", default={})
+        noise_std = self._extract_scalar(data, "noise_std", 0.0)
+
+        dynamic_cfg = self.dynamic_field_config
+        keep_plume_behind_obstacle = bool(dynamic_cfg.get("keep_plume_behind_obstacle", True))
+
+        wind_time_params: Dict[str, Any] = {}
+        wind_cfg = dynamic_cfg.get("wind", {})
+        if isinstance(wind_cfg, dict):
+            wind_time_params.update(wind_cfg)
+        wind_time_params.setdefault("enabled", False)
+
+        vortex_cfg = dynamic_cfg.get("vortex", {})
+        if isinstance(vortex_cfg, dict):
+            for key in (
+                "use_strouhal",
+                "strouhal",
+                "min_wind_speed",
+                "min_diameter",
+            ):
+                if key in vortex_cfg:
+                    vortex_params[key] = vortex_cfg[key]
+
+        return ConcentrationField(
+            sources=self._as_source_list(),
+            obstacles=self._as_obstacle_list(),
+            wind_speed=self.wind_speed,
+            wind_dir=self.wind_dir,
+            plume_params=plume_params,
+            vortex_params=vortex_params,
+            keep_plume_behind_obstacle=keep_plume_behind_obstacle,
+            noise_std=noise_std,
+            wind_time_params=wind_time_params,
+        )
+
     def _get_observations(self) -> List[np.ndarray]:
         obs = []
         for uav in self.uavs:
@@ -342,6 +478,15 @@ class PlumeEnv:
         return max(x_min, min(x_max, x)), max(y_min, min(y_max, y))
 
     def _sample_concentration(self, x: float, y: float) -> float:
+        if self.dynamic_field_enabled and self._concentration_model is not None:
+            sample_x = np.array([float(x)], dtype=float)
+            sample_y = np.array([float(y)], dtype=float)
+            c = self._concentration_model.concentration(sample_x, sample_y, t=self.field_time)
+            # Keep observation wind terms aligned with the dynamic field state.
+            self.wind_speed = float(self._concentration_model.wind_speed)
+            self.wind_dir = float(self._concentration_model.wind_dir)
+            return float(np.asarray(c).reshape(-1)[0])
+
         if self.concentration is None:
             return 0.0
 

@@ -19,9 +19,12 @@ class GaussianPlumeModel2D:
         - sigma_y: lateral dispersion coefficient (can be constant or a function)
         - wind_dir: wind direction angle in radians (0 means +x direction)
         """
-        self.u = u
-        self.L = L
-        self.sigma_y = sigma_y
+        self.L = float(L)
+        self.sigma_y = float(sigma_y)
+        self.set_wind(u=u, wind_dir=wind_dir)
+
+    def set_wind(self, u, wind_dir):
+        self.u = max(float(u), 1e-6)
         self.wind_dir = float(wind_dir)
         self._cos = np.cos(self.wind_dir)
         self._sin = np.sin(self.wind_dir)
@@ -51,7 +54,7 @@ class GaussianPlumeModel2D:
         C = np.zeros_like(x, dtype=float)
 
         if np.any(downstream):
-            sigma_y = self.sigma_y_func(xw[downstream])
+            sigma_y = np.maximum(self.sigma_y_func(xw[downstream]), 1e-6)
             C[downstream] = (
                 source["Q"]
                 / (2.0 * np.pi * sigma_y * self.u)
