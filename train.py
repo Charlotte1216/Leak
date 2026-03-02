@@ -59,7 +59,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enable_collision": True,
         "stop_on_collision": True,
         "observe_wind": False,
+        "observe_velocity": False,
         "distance_reward_scale": 0.0,
+        "found_source_concentration_scale": 1.0,
+        "found_source_stay_penalty": 0.0,
+        "found_source_stay_radius_scale": 1.0,
+        "uav_params": {},
         "init_pos_mode": "random",
     },
     "agent": {
@@ -172,14 +177,44 @@ def _append_avg_reward(
     episode: int,
     avg_reward: float,
     avg_found_sources: float,
+    avg_found_ratio: float,
 ) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if csv_path.exists():
+        with csv_path.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        header = rows[0] if rows else []
+        if "avg_found_ratio" not in header:
+            migrated_rows = [["episode", "avg_reward", "avg_found_sources", "avg_found_ratio"]]
+            for row in rows[1:]:
+                if not row:
+                    continue
+                episode_val = row[0] if len(row) > 0 else ""
+                avg_reward_val = row[1] if len(row) > 1 else ""
+                avg_found_sources_val = row[2] if len(row) > 2 else ""
+                avg_found_ratio_val = row[3] if len(row) > 3 else ""
+                migrated_rows.append(
+                    [episode_val, avg_reward_val, avg_found_sources_val, avg_found_ratio_val]
+                )
+            with csv_path.open("w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerows(migrated_rows)
+
     file_exists = csv_path.exists()
     with csv_path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["episode", "avg_reward", "avg_found_sources"])
-        writer.writerow([episode, f"{avg_reward:.6f}", f"{avg_found_sources:.4f}"])
+            writer.writerow(["episode", "avg_reward", "avg_found_sources", "avg_found_ratio"])
+        writer.writerow(
+            [
+                episode,
+                f"{avg_reward:.6f}",
+                f"{avg_found_sources:.4f}",
+                f"{avg_found_ratio:.6f}",
+            ]
+        )
 
 def train_loop(
     trainer: MARLTrainer,
@@ -204,6 +239,8 @@ def train_loop(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     trainer.training_stats.setdefault("found_sources", [])
+    trainer.training_stats.setdefault("total_sources", [])
+    trainer.training_stats.setdefault("found_source_ratios", [])
     trainer.training_stats.setdefault("success_episodes", [])
     trainer.training_stats.setdefault("partial_success_episodes", [])
     trainer.training_stats.setdefault(
@@ -214,6 +251,7 @@ def train_loop(
             "found_bonus": [],
             "battery": [],
             "distance": [],
+            "found_source_stay": [],
             "success_done": [],
             "failure_done": [],
         },
@@ -248,6 +286,7 @@ def train_loop(
             "found_bonus": 0.0,
             "battery": 0.0,
             "distance": 0.0,
+            "found_source_stay": 0.0,
             "success_done": 0.0,
             "failure_done": 0.0,
         }
@@ -315,12 +354,17 @@ def train_loop(
 
         episode_found_sources = int(env.found_sources.sum()) if env.found_sources is not None else 0
         total_sources = int(len(env.sources)) if env.sources is not None else 0
+        episode_found_ratio = (
+            float(episode_found_sources) / float(total_sources) if total_sources > 0 else 0.0
+        )
         episode_success = 1 if (total_sources > 0 and episode_found_sources >= total_sources) else 0
         episode_partial_success = 1 if episode_found_sources > 0 else 0
         trainer.training_stats["episode_rewards"].append(episode_reward)
         trainer.training_stats["episode_lengths"].append(episode_length)
         trainer.training_stats["losses"].append(stats.get("loss", 0.0))
         trainer.training_stats["found_sources"].append(episode_found_sources)
+        trainer.training_stats["total_sources"].append(total_sources)
+        trainer.training_stats["found_source_ratios"].append(episode_found_ratio)
         trainer.training_stats["success_episodes"].append(episode_success)
         trainer.training_stats["partial_success_episodes"].append(episode_partial_success)
         if episode_length > 0:
@@ -335,6 +379,7 @@ def train_loop(
             avg_length = float(np.mean(trainer.training_stats["episode_lengths"][-log_interval:]))
             avg_loss = float(np.mean(trainer.training_stats["losses"][-log_interval:]))
             avg_found_sources = float(np.mean(trainer.training_stats["found_sources"][-log_interval:]))
+            avg_found_ratio = float(np.mean(trainer.training_stats["found_source_ratios"][-log_interval:]))
             avg_success_rate = float(np.mean(trainer.training_stats["success_episodes"][-log_interval:]))
             avg_partial_success_rate = float(np.mean(trainer.training_stats["partial_success_episodes"][-log_interval:]))
             avg_components = {
@@ -347,6 +392,7 @@ def train_loop(
                 f"Avg Length: {avg_length:.2f} | "
                 f"Avg Loss: {avg_loss:.4f} | "
                 f"Avg Found Sources: {avg_found_sources:.2f} | "
+                f"Avg Found Ratio: {avg_found_ratio:.2%} | "
                 f"Success Rate: {avg_success_rate:.2%} | "
                 f"Partial Success Rate: {avg_partial_success_rate:.2%} | "
                 f"Avg Reward Components: "
@@ -355,10 +401,17 @@ def train_loop(
                 f"collision={avg_components['collision']:.2f}, "
                 f"battery={avg_components['battery']:.2f}, "
                 f"distance={avg_components['distance']:.2f}, "
+                f"stay_found={avg_components['found_source_stay']:.2f}, "
                 f"success_done={avg_components['success_done']:.2f}, "
                 f"failure_done={avg_components['failure_done']:.2f}"
             )
-            _append_avg_reward(avg_reward_csv, episode + 1, avg_reward, avg_found_sources)
+            _append_avg_reward(
+                avg_reward_csv,
+                episode + 1,
+                avg_reward,
+                avg_found_sources,
+                avg_found_ratio,
+            )
 
         if (episode + 1) % save_interval == 0:
             checkpoint_dir = save_dir / f"episode_{episode + 1}"
@@ -387,6 +440,10 @@ def main() -> None:
     _set_seed(seed)
 
     env_cfg = config["environment"]
+    uav_params = env_cfg.get("uav_params", {})
+    if not isinstance(uav_params, dict):
+        raise TypeError("environment.uav_params must be a mapping/dict in train_config.yaml")
+
     env = PlumeEnv(
         field_dir=args.field_dir,
         num_agents=int(env_cfg.get("num_agents", 2)),
@@ -404,9 +461,14 @@ def main() -> None:
         enable_collision=bool(env_cfg.get("enable_collision", True)),
         stop_on_collision=bool(env_cfg.get("stop_on_collision", True)),
         observe_wind=bool(env_cfg.get("observe_wind", False)),
+        observe_velocity=bool(env_cfg.get("observe_velocity", False)),
         distance_reward_scale=float(env_cfg.get("distance_reward_scale", 0.0)),
+        found_source_concentration_scale=float(env_cfg.get("found_source_concentration_scale", 1.0)),
+        found_source_stay_penalty=float(env_cfg.get("found_source_stay_penalty", 0.0)),
+        found_source_stay_radius_scale=float(env_cfg.get("found_source_stay_radius_scale", 1.0)),
         init_pos_mode=str(env_cfg.get("init_pos_mode", "random")),
         seed=seed,
+        uav_params=uav_params,
     )
 
     initial_obs = env.reset()
@@ -453,10 +515,11 @@ def main() -> None:
     _save_json(config, Path(output_cfg["log_dir"]) / "config.json")
 
     lr_value = float(agent_hparams.get("lr", 0.0))
-    gamma_value = float(agent_hparams.get("gamma", 0.0))
+    agent_gamma_value = float(agent_hparams.get("gamma", 0.0))
+    gamma_value = float(trainer_cfg.get("gamma", agent_gamma_value))
     batch_size = int(agent_hparams.get("batch_size", 0))
     file_tag = (
-        f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}"
+        f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
         f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
     )
 

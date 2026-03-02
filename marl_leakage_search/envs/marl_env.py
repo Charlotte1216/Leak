@@ -35,7 +35,11 @@ class PlumeEnv:
         enable_collision: bool = True, # 是否启用与障碍物的碰撞检测/惩罚
         stop_on_collision: bool = True, # 碰撞时是否停止无人机
         observe_wind: bool = False, # 观测中是否包含风速/风向
+        observe_velocity: bool = False, # 观测中是否包含速度 (vx, vy)
         distance_reward_scale: float = 0.0, # 距离源的密集奖励系数
+        found_source_concentration_scale: float = 1.0,
+        found_source_stay_penalty: float = 0.0,
+        found_source_stay_radius_scale: float = 1.0,
         init_pos_mode: str = "random",
         seed: int = None,
         uav_params: Dict = None,
@@ -52,7 +56,11 @@ class PlumeEnv:
         self.enable_collision = bool(enable_collision)
         self.stop_on_collision = bool(stop_on_collision)
         self.observe_wind = bool(observe_wind)
+        self.observe_velocity = bool(observe_velocity)
         self.distance_reward_scale = float(distance_reward_scale)
+        self.found_source_concentration_scale = float(found_source_concentration_scale)
+        self.found_source_stay_penalty = float(found_source_stay_penalty)
+        self.found_source_stay_radius_scale = float(found_source_stay_radius_scale)
         self.init_pos_mode = init_pos_mode
         self.rng = random.Random(seed)
 
@@ -131,6 +139,7 @@ class PlumeEnv:
         success_done_terms = [0.0] * self.num_agents
         failure_done_terms = [0.0] * self.num_agents
         distance_terms = [0.0] * self.num_agents
+        found_source_stay_terms = [0.0] * self.num_agents
 
         for idx, (uav, act) in enumerate(zip(self.uavs, action)):
             if not uav.is_battery_empty():
@@ -154,7 +163,15 @@ class PlumeEnv:
         # compute concentration-based rewards and found sources
         for i, uav in enumerate(self.uavs):
             conc = self._sample_concentration(uav.x, uav.y)
-            conc_terms[i] = conc
+            near_previously_found_source = self._is_near_found_source(
+                uav.x,
+                uav.y,
+                found_mask=found_mask_snapshot,
+            )
+            conc_reward = conc
+            if near_previously_found_source:
+                conc_reward *= self.found_source_concentration_scale
+            conc_terms[i] = conc_reward
             rewards[i] += conc_terms[i]
 
             newly_found = self._update_found_sources(uav.x, uav.y)
@@ -174,6 +191,15 @@ class PlumeEnv:
                     delta = (prev_d - curr_d) / self._max_distance
                     distance_terms[i] = self.distance_reward_scale * float(delta)
                     rewards[i] += distance_terms[i]
+
+            if (
+                near_previously_found_source
+                and self.found_source_stay_penalty > 0.0
+                and self.found_sources is not None
+                and np.any(~self.found_sources)
+            ):
+                found_source_stay_terms[i] = -self.found_source_stay_penalty
+                rewards[i] += found_source_stay_terms[i]
 
         success_done = self.found_sources is not None and self.found_sources.all()
         failure_done = all(uav.is_battery_empty() for uav in self.uavs) and not success_done
@@ -198,6 +224,7 @@ class PlumeEnv:
                 "found_bonus": found_terms,
                 "battery": battery_terms,
                 "distance": distance_terms,
+                "found_source_stay": found_source_stay_terms,
                 "success_done": success_done_terms,
                 "failure_done": failure_done_terms,
                 "done_bonus": legacy_done_terms,
@@ -288,6 +315,8 @@ class PlumeEnv:
         for uav in self.uavs:
             conc = self._sample_concentration(uav.x, uav.y)
             payload = [uav.x, uav.y, conc, uav.battery]
+            if self.observe_velocity:
+                payload.extend([uav.vx, uav.vy])
             if self.observe_wind:
                 payload.extend([self.wind_speed, math.cos(self.wind_dir), math.sin(self.wind_dir)])
             obs.append(np.array(payload, dtype=float))
@@ -367,3 +396,28 @@ class PlumeEnv:
             if d_min is None or d < d_min:
                 d_min = d
         return d_min
+
+    def _is_near_found_source(
+        self,
+        x: float,
+        y: float,
+        found_mask: np.ndarray | None = None,
+    ) -> bool:
+        if self.sources is None or len(self.sources) == 0:
+            return False
+        if found_mask is None:
+            found_mask = self.found_sources
+        if found_mask is None or not np.any(found_mask):
+            return False
+
+        radius = self.source_find_radius * self.found_source_stay_radius_scale
+        if radius <= 0.0:
+            return False
+        radius_sq = radius * radius
+
+        for i, (sx, sy, _q) in enumerate(self.sources):
+            if not found_mask[i]:
+                continue
+            if (x - sx) ** 2 + (y - sy) ** 2 <= radius_sq:
+                return True
+        return False

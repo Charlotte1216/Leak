@@ -42,7 +42,7 @@ learning:
     clip: 0.2  # PPO 裁剪参数
     epochs: 4  # PPO 更新轮数
     value_coef: 0.5  # 价值损失系数
-    entropy_coef: 0.01  # 熵损失系数
+    entropy_coef: 0.003  # 熵损失系数
 
 # 设备配置
 device: "cuda"  # 可选: "cuda", "cpu"

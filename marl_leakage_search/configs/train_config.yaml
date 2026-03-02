@@ -3,7 +3,7 @@
 
 # 训练基本参数
 training:
-  num_episodes: 5000  # 训练回合数
+  num_episodes: 8000  # 训练回合数
   max_steps_per_episode: 1000  # 每个回合的最大步数
   save_interval: 100  # 模型保存间隔（回合数）
   eval_interval: 50  # 评估间隔（回合数）
@@ -28,20 +28,30 @@ marl:
 
 # 环境配置
 environment:
-  num_agents: 2  # 智能体数量
-  state_dim: 4  # 当前 marl_env 观测默认为 [x, y, conc, battery] 共4维；开启 observe_wind 后会增加 3 维
+  num_agents: 4  # 智能体数量
+  state_dim: 4  # 基础观测为 [x, y, conc, battery]；observe_velocity 增加 2 维，observe_wind 增加 3 维
   action_dim: 8  # 动作维度（8个方向）
   source_find_radius: 5.0  # source find radius
   collision_penalty: 1.0  # collision penalty
   battery_penalty: 0.001  # battery penalty
   found_source_bonus: 20.0  # found source bonus
   done_bonus: 0.0  # 兼容旧配置；若 success_done_bonus 为空则作为成功完成奖励使用
-  success_done_bonus: 30.0  # 找到全部源时奖励
+  success_done_bonus: 120.0  # 找到全部源时奖励（提高终局奖励权重）
   failure_done_penalty: 5.0  # 电池耗尽导致结束时惩罚
   enable_collision: true  # 是否启用与障碍物的碰撞检测/惩罚
   stop_on_collision: false  # 碰撞时是否停止无人机（仅在启用碰撞时生效）
   observe_wind: true  # 观测中是否包含风速与风向 (wind_speed, cos, sin)
-  distance_reward_scale: 1  # 距离改善量奖励系数（变近为正，变远为负）
+  observe_velocity: true  # 观测中是否包含速度 (vx, vy)
+  distance_reward_scale: 6  # 距离改善量奖励系数（变近为正，变远为负）
+  found_source_concentration_scale: 0.05  # 已发现源附近浓度奖励缩放（<1 会抑制停留收益）
+  found_source_stay_penalty: 0.15  # 还有未发现源时，停留在已发现源附近的每步惩罚
+  found_source_stay_radius_scale: 1.5  # 停留判定半径 = source_find_radius * 该系数
+  uav_params:  # UAVDynamics 参数（已打通到 PlumeEnv）
+    max_speed: 5.0
+    max_acceleration: 1.0
+    max_battery: 150.0
+    energy_consumption_rate: 0.07
+    dt: 1.0
   init_pos_mode: "random"  # init position mode
 
 # 输出配置

@@ -24,12 +24,15 @@ environment:
   battery_penalty: 0.001
   found_source_bonus: 20.0
   done_bonus: 0.0
-  success_done_bonus: 30.0
+  success_done_bonus: 80.0
   failure_done_penalty: 5.0
   enable_collision: true
   stop_on_collision: false
   observe_wind: true
   distance_reward_scale: 1
+  found_source_concentration_scale: 0.2
+  found_source_stay_penalty: 0.05
+  found_source_stay_radius_scale: 1.5
   init_pos_mode: random
 output:
   save_dir: ./checkpoints
