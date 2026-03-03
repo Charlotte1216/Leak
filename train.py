@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import random
+import shutil
 from pathlib import Path
 from typing import Any, Dict
 
@@ -104,6 +105,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "epochs": 4,
                 "value_coef": 0.5,
                 "entropy_coef": 0.01,
+                "aux": {
+                    "enabled": False,
+                    "weight": 0.0,
+                    "target_index": 2,
+                    "hidden_dim": 128,
+                },
             },
         },
         "device": "cuda",
@@ -147,6 +154,7 @@ def _build_agent_config(agent_cfg: Dict[str, Any]) -> Dict[str, Any]:
     learning = agent_cfg.get("learning", {})
     dqn_cfg = learning.get("dqn", {})
     ppo_cfg = learning.get("ppo", {})
+    aux_cfg = ppo_cfg.get("aux", {})
 
     return {
         "lr": float(learning.get("lr", 3e-4)),
@@ -161,6 +169,10 @@ def _build_agent_config(agent_cfg: Dict[str, Any]) -> Dict[str, Any]:
         "ppo_epochs": ppo_cfg.get("epochs", 4),
         "value_coef": ppo_cfg.get("value_coef", 0.5),
         "entropy_coef": ppo_cfg.get("entropy_coef", 0.01),
+        "aux_enabled": bool(aux_cfg.get("enabled", False)),
+        "aux_weight": float(aux_cfg.get("weight", 0.0)),
+        "aux_target_index": int(aux_cfg.get("target_index", 2)),
+        "aux_hidden_dim": int(aux_cfg.get("hidden_dim", 128)),
         "device": agent_cfg.get("device", "cuda"),
     }
 
@@ -169,6 +181,51 @@ def _save_json(payload: Dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+
+
+def _snapshot_run_artifacts(
+    *,
+    config: Dict[str, Any],
+    output_cfg: Dict[str, Any],
+    file_tag: str,
+    train_config_path: str,
+    agent_config_path: str,
+) -> None:
+    """Persist per-run configs so each training run is reproducible and not overwritten."""
+    base_log_dir = Path(output_cfg["log_dir"])
+    base_save_dir = Path(output_cfg["save_dir"])
+    run_log_dir = base_log_dir / file_tag
+    run_save_dir = base_save_dir / file_tag
+    run_artifact_dir = run_save_dir / "run_artifacts"
+
+    base_log_dir.mkdir(parents=True, exist_ok=True)
+    run_log_dir.mkdir(parents=True, exist_ok=True)
+    run_artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    # Keep legacy path for analysis scripts and add per-run config snapshot.
+    _save_json(config, base_log_dir / "config.json")
+    _save_json(config, run_log_dir / "config.json")
+    _save_json(config, run_artifact_dir / "merged_config.json")
+
+    train_cfg_src = Path(train_config_path)
+    if train_cfg_src.exists():
+        shutil.copy2(train_cfg_src, run_artifact_dir / "train_config_input.yaml")
+
+    agent_cfg_src = Path(agent_config_path)
+    if agent_cfg_src.exists():
+        shutil.copy2(agent_cfg_src, run_artifact_dir / "agent_config_input.yaml")
+
+    _save_json(
+        {
+            "file_tag": file_tag,
+            "train_config_path": str(train_cfg_src.resolve()),
+            "agent_config_path": str(agent_cfg_src.resolve()),
+            "run_log_dir": str(run_log_dir.resolve()),
+            "run_checkpoint_dir": str(run_save_dir.resolve()),
+        },
+        run_artifact_dir / "run_meta.json",
+    )
+
 
 def _setup_logging(log_dir: Path, log_file: str) -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -241,6 +298,7 @@ def train_loop(
     logger: logging.Logger,
     avg_reward_csv: Path,
     checkpoint_run_tag: str | None = None,
+    log_run_tag: str | None = None,
 ) -> None:
     training_cfg = cfg["training"]
     num_episodes = int(training_cfg["num_episodes"])
@@ -253,8 +311,9 @@ def train_loop(
     if checkpoint_run_tag:
         # Group checkpoints by run hyperparameters so runs do not overwrite each other.
         save_dir = save_dir / checkpoint_run_tag
-    log_dir = Path(output_cfg["log_dir"])
-    log_dir.mkdir(parents=True, exist_ok=True)
+    base_log_dir = Path(output_cfg["log_dir"])
+    run_log_dir = base_log_dir / log_run_tag if log_run_tag else base_log_dir
+    run_log_dir.mkdir(parents=True, exist_ok=True)
 
     trainer.training_stats.setdefault("found_sources", [])
     trainer.training_stats.setdefault("total_sources", [])
@@ -283,7 +342,7 @@ def train_loop(
             agent.train_mode()
 
         if trainer.algorithm == "mappo":
-            trajectories = [dict(states=[], actions=[], rewards=[], dones=[], old_log_probs=[], values=[])
+            trajectories = [dict(states=[], next_states=[], actions=[], rewards=[], dones=[], old_log_probs=[], values=[])
                             for _ in range(trainer.num_agents)]
         else:
             batch_data = {
@@ -319,8 +378,8 @@ def train_loop(
                 if trainer.algorithm == "mappo":
                     action, log_prob, value = agent.select_action_with_probs(obs)
                     actions.append(action)
-                    action_log_probs.append(float(log_prob.cpu().numpy()))
-                    critic_values.append(float(value.cpu().numpy()))
+                    action_log_probs.append(float(log_prob.detach().cpu().item()))
+                    critic_values.append(float(value.detach().cpu().item()))
                 else:
                     action = agent.select_action(obs, training=True)
                     actions.append(action)
@@ -340,6 +399,7 @@ def train_loop(
             if trainer.algorithm == "mappo":
                 for agent_idx in range(trainer.num_agents):
                     trajectories[agent_idx]["states"].append(observations[agent_idx])
+                    trajectories[agent_idx]["next_states"].append(next_observations[agent_idx])
                     trajectories[agent_idx]["actions"].append(actions[agent_idx])
                     trajectories[agent_idx]["rewards"].append(rewards[agent_idx])
                     trajectories[agent_idx]["dones"].append(done_list[agent_idx])
@@ -434,10 +494,14 @@ def train_loop(
         if (episode + 1) % save_interval == 0:
             checkpoint_dir = save_dir / f"episode_{episode + 1}"
             trainer.save_models(str(checkpoint_dir))
-            _save_json(trainer.training_stats, log_dir / "training_stats.json")
+            _save_json(trainer.training_stats, run_log_dir / "training_stats.json")
+            if run_log_dir != base_log_dir:
+                _save_json(trainer.training_stats, base_log_dir / "training_stats.json")
 
     trainer.save_models(str(save_dir / "final"))
-    _save_json(trainer.training_stats, log_dir / "training_stats.json")
+    _save_json(trainer.training_stats, run_log_dir / "training_stats.json")
+    if run_log_dir != base_log_dir:
+        _save_json(trainer.training_stats, base_log_dir / "training_stats.json")
 
 
 def main() -> None:
@@ -531,7 +595,6 @@ def main() -> None:
     output_cfg = config["output"]
     Path(output_cfg["save_dir"]).mkdir(parents=True, exist_ok=True)
     Path(output_cfg["log_dir"]).mkdir(parents=True, exist_ok=True)
-    _save_json(config, Path(output_cfg["log_dir"]) / "config.json")
 
     lr_value = float(agent_hparams.get("lr", 0.0))
     agent_gamma_value = float(agent_hparams.get("gamma", 0.0))
@@ -540,6 +603,13 @@ def main() -> None:
     file_tag = (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
         f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
+    )
+    _snapshot_run_artifacts(
+        config=config,
+        output_cfg=output_cfg,
+        file_tag=file_tag,
+        train_config_path=args.train_config,
+        agent_config_path=args.agent_config,
     )
 
     log_file = f"{file_tag}.log"
@@ -557,7 +627,15 @@ def main() -> None:
         trainer.load_models(str(load_path))
         logger.info(f"Loaded pretrained models from {load_path}")
 
-    train_loop(trainer, env, config, logger, avg_reward_csv, checkpoint_run_tag=file_tag)
+    train_loop(
+        trainer,
+        env,
+        config,
+        logger,
+        avg_reward_csv,
+        checkpoint_run_tag=file_tag,
+        log_run_tag=file_tag,
+    )
 
 
 if __name__ == "__main__":

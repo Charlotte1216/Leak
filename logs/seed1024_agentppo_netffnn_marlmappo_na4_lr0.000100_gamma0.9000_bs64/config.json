@@ -121,5 +121,5 @@
     "log_dir": "./logs",
     "tensorboard_dir": "./runs"
   },
-  "seed": 42
+  "seed": 1024
 }

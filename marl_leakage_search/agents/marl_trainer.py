@@ -190,6 +190,7 @@ class MARLTrainer:
             traj = trajectories[agent_idx]
             
             states = np.array(traj['states'])
+            next_states = np.array(traj.get('next_states', []))
             actions = np.array(traj['actions'])
             rewards = np.array(traj['rewards'])
             dones = np.array(traj['dones'])
@@ -211,6 +212,7 @@ class MARLTrainer:
             # 准备批次数据
             batch = {
                 'states': states,
+                'next_states': next_states,
                 'actions': actions,
                 'old_log_probs': old_log_probs,
                 'rewards': rewards,

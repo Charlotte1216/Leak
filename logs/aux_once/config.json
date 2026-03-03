@@ -1,8 +1,8 @@
 {
   "training": {
-    "num_episodes": 8000,
+    "num_episodes": 120,
     "max_steps_per_episode": 1000,
-    "save_interval": 100,
+    "save_interval": 200,
     "log_interval": 10,
     "pretrained_dir": "",
     "eval_interval": 50
@@ -10,7 +10,7 @@
   "marl": {
     "algorithm": "mappo",
     "mappo": {
-      "gamma": 0.9,
+      "gamma": 0.99,
       "gae_lambda": 0.95
     },
     "qmix": {
@@ -72,8 +72,8 @@
     "algorithm": "ppo",
     "network_type": "ffnn",
     "learning": {
-      "lr": 0.0001,
-      "gamma": 0.9,
+      "lr": "3e-4",
+      "gamma": 0.99,
       "batch_size": 64,
       "dqn": {
         "epsilon": 1.0,
@@ -118,8 +118,8 @@
   },
   "output": {
     "save_dir": "./checkpoints",
-    "log_dir": "./logs",
+    "log_dir": "./logs/aux_once",
     "tensorboard_dir": "./runs"
   },
-  "seed": 42
+  "seed": 424242
 }

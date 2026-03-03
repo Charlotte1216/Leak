@@ -1,8 +1,8 @@
 {
   "training": {
-    "num_episodes": 8000,
-    "max_steps_per_episode": 1000,
-    "save_interval": 100,
+    "num_episodes": 60,
+    "max_steps_per_episode": 300,
+    "save_interval": 1000,
     "log_interval": 10,
     "pretrained_dir": "",
     "eval_interval": 50
@@ -10,7 +10,7 @@
   "marl": {
     "algorithm": "mappo",
     "mappo": {
-      "gamma": 0.9,
+      "gamma": 0.99,
       "gae_lambda": 0.95
     },
     "qmix": {
@@ -72,8 +72,8 @@
     "algorithm": "ppo",
     "network_type": "ffnn",
     "learning": {
-      "lr": 0.0001,
-      "gamma": 0.9,
+      "lr": "3e-4",
+      "gamma": 0.99,
       "batch_size": 64,
       "dqn": {
         "epsilon": 1.0,
@@ -86,13 +86,7 @@
         "clip": 0.2,
         "epochs": 4,
         "value_coef": 0.5,
-        "entropy_coef": 0.003,
-        "aux": {
-          "enabled": true,
-          "weight": 0.1,
-          "target_index": 2,
-          "hidden_dim": 128
-        }
+        "entropy_coef": 0.003
       }
     },
     "device": "cuda",
@@ -117,8 +111,8 @@
     }
   },
   "output": {
-    "save_dir": "./checkpoints",
-    "log_dir": "./logs",
+    "save_dir": "./checkpoints/smoke_mappo",
+    "log_dir": "./logs/smoke_mappo",
     "tensorboard_dir": "./runs"
   },
   "seed": 42

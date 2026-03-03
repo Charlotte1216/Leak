@@ -15,8 +15,8 @@ network:
     seq_len: 10
 algorithm: ppo
 learning:
-  lr: 0.0001
-  gamma: 0.9
+  lr: 3e-4
+  gamma: 0.99
   batch_size: 64
   dqn:
     epsilon: 1.0

@@ -45,6 +45,7 @@ MIN_POINTS = 5
 MIN_DELTA = 0.1
 MIN_SLOPE = 0.0
 PARALLEL_JOBS = 4
+FORCE_MAPPO = True
 
 
 def _load_yaml(path: Path) -> Dict:
@@ -196,6 +197,11 @@ def _prepare_configs(
 ) -> Tuple[Path, Path, str, str, str, int]:
     train_cfg = _load_yaml(DEFAULT_TRAIN_CFG)
     agent_cfg = _load_yaml(DEFAULT_AGENT_CFG)
+
+    if FORCE_MAPPO:
+        train_cfg.setdefault("marl", {})
+        train_cfg["marl"]["algorithm"] = "mappo"
+        agent_cfg["algorithm"] = "ppo"
 
     train_cfg["seed"] = int(seed)
     agent_cfg.setdefault("learning", {})

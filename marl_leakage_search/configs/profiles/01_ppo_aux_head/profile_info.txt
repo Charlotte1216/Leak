@@ -1,0 +1,7 @@
+﻿profile_name: 01_ppo_aux_head
+algorithm: MAPPO (agent uses PPO)
+feature: auxiliary prediction head enabled
+label: PPO带辅助头
+files:
+- train_config_ppo_aux_head.yaml
+- agent_config_ppo_aux_head.yaml

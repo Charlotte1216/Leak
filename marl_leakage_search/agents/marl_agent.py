@@ -113,15 +113,31 @@ class MARLAgent:
         self.ppo_epochs = config.get('ppo_epochs', 4)
         self.value_coef = config.get('value_coef', 0.5)
         self.entropy_coef = config.get('entropy_coef', 0.01)
+        self.aux_enabled = bool(config.get('aux_enabled', False))
+        self.aux_weight = float(config.get('aux_weight', 0.0))
+        self.aux_target_index = int(config.get('aux_target_index', 2))
+        self.aux_hidden_dim = int(config.get('aux_hidden_dim', 128))
         
         # 创建网络
         self._build_networks()
         
         # 优化器
         if self.algorithm == 'ppo':
-            self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+            params = list(self.policy_net.parameters())
+            if self.aux_enabled:
+                # Action-conditioned auxiliary predictor head: predicts next-step concentration.
+                self.aux_predictor = nn.Sequential(
+                    nn.Linear(self.state_dim + self.action_dim, self.aux_hidden_dim),
+                    nn.ReLU(),
+                    nn.Linear(self.aux_hidden_dim, 1),
+                ).to(self.device)
+                params += list(self.aux_predictor.parameters())
+            else:
+                self.aux_predictor = None
+            self.optimizer = optim.Adam(params, lr=self.lr)
         else:  # dqn
             self.optimizer = optim.Adam(self.q_net.parameters(), lr=self.lr)
+            self.aux_predictor = None
         
         # 经验回放缓冲区（主要用于 DQN）
         self.replay_buffer = ReplayBuffer(capacity=config.get('replay_buffer_size', 10000))
@@ -130,7 +146,8 @@ class MARLAgent:
         self.training_stats = {
             'loss': [],
             'value_loss': [],
-            'policy_loss': []
+            'policy_loss': [],
+            'aux_loss': [],
         }
     
     def _build_networks(self):
@@ -260,8 +277,14 @@ class MARLAgent:
         old_log_probs = torch.FloatTensor(batch['old_log_probs']).to(self.device)
         advantages = torch.FloatTensor(batch['advantages']).to(self.device)
         returns = torch.FloatTensor(batch['returns']).to(self.device)
+        next_states = None
+        if 'next_states' in batch and batch['next_states'] is not None and len(batch['next_states']) > 0:
+            next_states = torch.FloatTensor(batch['next_states']).to(self.device)
         
         total_loss = 0
+        total_policy_loss = 0.0
+        total_value_loss = 0.0
+        total_aux_loss = 0.0
         
         for epoch in range(self.ppo_epochs):
             # 前向传播
@@ -292,17 +315,44 @@ class MARLAgent:
             
             # 总损失
             loss = policy_loss + self.value_coef * value_loss + self.entropy_coef * entropy_loss
+
+            aux_loss_value = 0.0
+            if (
+                self.aux_enabled
+                and self.aux_predictor is not None
+                and next_states is not None
+                and 0 <= self.aux_target_index < next_states.shape[1]
+            ):
+                action_onehot = F.one_hot(actions, num_classes=self.action_dim).float()
+                aux_input = torch.cat([states, action_onehot], dim=1)
+                aux_pred = self.aux_predictor(aux_input).squeeze(-1)
+                aux_target = next_states[:, self.aux_target_index]
+                aux_loss = F.mse_loss(aux_pred, aux_target)
+                loss = loss + self.aux_weight * aux_loss
+                aux_loss_value = float(aux_loss.item())
             
             # 反向传播
             self.optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 0.5)
+            if self.aux_predictor is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.policy_net.parameters()) + list(self.aux_predictor.parameters()),
+                    0.5,
+                )
+            else:
+                torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 0.5)
             self.optimizer.step()
             
             total_loss += loss.item()
+            total_policy_loss += float(policy_loss.item())
+            total_value_loss += float(value_loss.item())
+            total_aux_loss += aux_loss_value
         
         # 更新统计
         self.training_stats['loss'].append(total_loss / self.ppo_epochs)
+        self.training_stats['policy_loss'].append(total_policy_loss / self.ppo_epochs)
+        self.training_stats['value_loss'].append(total_value_loss / self.ppo_epochs)
+        self.training_stats['aux_loss'].append(total_aux_loss / self.ppo_epochs)
     
     def _train_dqn(self):
         """使用 DQN 算法训练"""
@@ -369,7 +419,13 @@ class MARLAgent:
     def save(self, filepath: str):
         """保存模型"""
         if self.algorithm == 'ppo':
-            torch.save(self.policy_net.state_dict(), filepath)
+            payload = {
+                'policy_net': self.policy_net.state_dict(),
+                'aux_enabled': bool(self.aux_enabled),
+            }
+            if self.aux_predictor is not None:
+                payload['aux_predictor'] = self.aux_predictor.state_dict()
+            torch.save(payload, filepath)
         else:
             torch.save({
                 'q_net': self.q_net.state_dict(),
@@ -379,7 +435,18 @@ class MARLAgent:
     def load(self, filepath: str):
         """加载模型"""
         if self.algorithm == 'ppo':
-            self.policy_net.load_state_dict(torch.load(filepath, map_location=self.device))
+            checkpoint = torch.load(filepath, map_location=self.device)
+            if isinstance(checkpoint, dict) and 'policy_net' in checkpoint:
+                self.policy_net.load_state_dict(checkpoint['policy_net'])
+                if (
+                    self.aux_predictor is not None
+                    and 'aux_predictor' in checkpoint
+                    and isinstance(checkpoint['aux_predictor'], dict)
+                ):
+                    self.aux_predictor.load_state_dict(checkpoint['aux_predictor'])
+            else:
+                # Backward compatibility with older PPO checkpoints (policy state_dict only).
+                self.policy_net.load_state_dict(checkpoint)
         else:
             checkpoint = torch.load(filepath, map_location=self.device)
             self.q_net.load_state_dict(checkpoint['q_net'])

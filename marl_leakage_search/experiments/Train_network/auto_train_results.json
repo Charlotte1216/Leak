@@ -1,5 +1,18 @@
 [
   {
+    "seed": 1024,
+    "agent_algorithm": "ppo",
+    "network_type": "ffnn",
+    "marl_algorithm": "mappo",
+    "num_agents": 4,
+    "lr": 0.0001,
+    "gamma": 0.9,
+    "batch_size": 64,
+    "trend_ok": true,
+    "slope": 0.018971755009019247,
+    "points": 800
+  },
+  {
     "seed": 42,
     "agent_algorithm": "ppo",
     "network_type": "ffnn",
@@ -9,32 +22,7 @@
     "gamma": 0.9,
     "batch_size": 64,
     "trend_ok": true,
-    "slope": 0.004706480266099846,
-    "points": 1655,
-    "avg_reward": 85.77,
-    "avg_length": 411.7,
-    "avg_loss": 95.5811,
-    "avg_found_sources": 3.7,
-    "success_rate": 70.0,
-    "partial_success_rate": 100.0
-  },
-  {
-    "seed": 1024,
-    "agent_algorithm": "ppo",
-    "network_type": "ffnn",
-    "marl_algorithm": "mappo",
-    "num_agents": 4,
-    "lr": 0.0001,
-    "gamma": 0.9,
-    "batch_size": 64,
-    "trend_ok": false,
-    "slope": -0.0037625967634660504,
-    "points": 1648,
-    "avg_reward": 12.95,
-    "avg_length": 425.7,
-    "avg_loss": 17.2543,
-    "avg_found_sources": 2.6,
-    "success_rate": 10.0,
-    "partial_success_rate": 100.0
+    "slope": 0.022349919879611563,
+    "points": 800
   }
 ]
