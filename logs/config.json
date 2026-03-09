@@ -92,6 +92,11 @@
           "weight": 0.0,
           "target_index": 2,
           "hidden_dim": 128
+        },
+        "lstm_training": {
+          "enabled": true,
+          "seq_len": 16,
+          "stride": 4
         }
       }
     },

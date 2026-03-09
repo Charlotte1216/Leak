@@ -117,6 +117,12 @@ class MARLAgent:
         self.aux_weight = float(config.get('aux_weight', 0.0))
         self.aux_target_index = int(config.get('aux_target_index', 2))
         self.aux_hidden_dim = int(config.get('aux_hidden_dim', 128))
+        self.lstm_hidden_dim = int(config.get('lstm_hidden_dim', 128))
+        self.lstm_lstm_hidden_dim = int(config.get('lstm_lstm_hidden_dim', 64))
+        self.lstm_num_layers = int(config.get('lstm_num_layers', 1))
+        self.ppo_lstm_seq_training_enabled = bool(config.get('ppo_lstm_seq_training_enabled', False))
+        self.ppo_lstm_seq_len = int(config.get('ppo_lstm_seq_len', 16))
+        self.ppo_lstm_seq_stride = int(config.get('ppo_lstm_seq_stride', 4))
         
         # 创建网络
         self._build_networks()
@@ -161,7 +167,11 @@ class MARLAgent:
                 ).to(self.device)
             elif self.network_type == 'lstm':
                 self.policy_net = LSTMActorCriticNetwork(
-                    self.state_dim, self.action_dim
+                    self.state_dim,
+                    self.action_dim,
+                    hidden_dim=self.lstm_hidden_dim,
+                    lstm_hidden_dim=self.lstm_lstm_hidden_dim,
+                    num_layers=self.lstm_num_layers,
                 ).to(self.device)
             elif self.network_type == 'transformer':
                 self.policy_net = TransformerActorCriticNetwork(
@@ -180,10 +190,18 @@ class MARLAgent:
                 ).to(self.device)
             elif self.network_type == 'lstm':
                 self.q_net = LSTMDQNNetwork(
-                    self.state_dim, self.action_dim
+                    self.state_dim,
+                    self.action_dim,
+                    hidden_dim=self.lstm_hidden_dim,
+                    lstm_hidden_dim=self.lstm_lstm_hidden_dim,
+                    num_layers=self.lstm_num_layers,
                 ).to(self.device)
                 self.target_q_net = LSTMDQNNetwork(
-                    self.state_dim, self.action_dim
+                    self.state_dim,
+                    self.action_dim,
+                    hidden_dim=self.lstm_hidden_dim,
+                    lstm_hidden_dim=self.lstm_lstm_hidden_dim,
+                    num_layers=self.lstm_num_layers,
                 ).to(self.device)
             else:
                 raise ValueError(f"DQN does not support {self.network_type} network type")
@@ -266,6 +284,70 @@ class MARLAgent:
             self._train_ppo(batch)
         else:  # dqn
             self._train_dqn()
+
+    def _build_lstm_sequence_batch(
+        self,
+        states: torch.Tensor,
+        actions: torch.Tensor,
+        old_log_probs: torch.Tensor,
+        advantages: torch.Tensor,
+        returns: torch.Tensor,
+        next_states: Optional[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Convert flat trajectory [T, D] into sequence batch [B, L, D] for LSTM PPO updates.
+        Loss is computed on the last timestep of each sequence.
+        """
+        total_steps = int(states.shape[0])
+        seq_len = max(1, min(int(self.ppo_lstm_seq_len), total_steps))
+        stride = max(1, int(self.ppo_lstm_seq_stride))
+
+        last_indices = list(range(seq_len - 1, total_steps, stride))
+        if not last_indices or last_indices[-1] != total_steps - 1:
+            last_indices.append(total_steps - 1)
+
+        seq_states = []
+        seq_actions = []
+        seq_old_log_probs = []
+        seq_advantages = []
+        seq_returns = []
+        seq_last_states = []
+        seq_next_states = [] if next_states is not None else None
+
+        for last_idx in last_indices:
+            start_idx = max(0, last_idx - seq_len + 1)
+            seq = states[start_idx:last_idx + 1]
+            # Left-pad short prefix windows to fixed length so batching stays dense.
+            if seq.shape[0] < seq_len:
+                pad = seq[0].unsqueeze(0).repeat(seq_len - seq.shape[0], 1)
+                seq = torch.cat([pad, seq], dim=0)
+
+            seq_states.append(seq)
+            seq_actions.append(actions[last_idx])
+            seq_old_log_probs.append(old_log_probs[last_idx])
+            seq_advantages.append(advantages[last_idx])
+            seq_returns.append(returns[last_idx])
+            seq_last_states.append(states[last_idx])
+            if seq_next_states is not None:
+                seq_next_states.append(next_states[last_idx])
+
+        batch_states = torch.stack(seq_states, dim=0)
+        batch_actions = torch.stack(seq_actions, dim=0)
+        batch_old_log_probs = torch.stack(seq_old_log_probs, dim=0)
+        batch_advantages = torch.stack(seq_advantages, dim=0)
+        batch_returns = torch.stack(seq_returns, dim=0)
+        batch_last_states = torch.stack(seq_last_states, dim=0)
+        batch_next_states = torch.stack(seq_next_states, dim=0) if seq_next_states is not None else None
+
+        return (
+            batch_states,
+            batch_actions,
+            batch_old_log_probs,
+            batch_advantages,
+            batch_returns,
+            batch_last_states,
+            batch_next_states,
+        )
     
     def _train_ppo(self, batch: Dict):
         """使用 PPO 算法训练"""
@@ -280,6 +362,32 @@ class MARLAgent:
         next_states = None
         if 'next_states' in batch and batch['next_states'] is not None and len(batch['next_states']) > 0:
             next_states = torch.FloatTensor(batch['next_states']).to(self.device)
+
+        train_states = states
+        train_actions = actions
+        train_old_log_probs = old_log_probs
+        train_advantages = advantages
+        train_returns = returns
+        aux_states = states
+        aux_next_states = next_states
+
+        if self.network_type == 'lstm' and self.ppo_lstm_seq_training_enabled:
+            (
+                train_states,
+                train_actions,
+                train_old_log_probs,
+                train_advantages,
+                train_returns,
+                aux_states,
+                aux_next_states,
+            ) = self._build_lstm_sequence_batch(
+                states=states,
+                actions=actions,
+                old_log_probs=old_log_probs,
+                advantages=advantages,
+                returns=returns,
+                next_states=next_states,
+            )
         
         total_loss = 0
         total_policy_loss = 0.0
@@ -292,23 +400,23 @@ class MARLAgent:
                 # PPO 按样本批训练时不复用 rollout 的隐藏状态，避免 batch 维度不匹配
                 self.policy_net.hidden_state = None
                 _, new_log_probs, entropy, values, _ = self.policy_net.get_action_and_value(
-                    states, actions, hidden=None
+                    train_states, train_actions, hidden=None
                 )
             else:
                 _, new_log_probs, entropy, values = self.policy_net.get_action_and_value(
-                    states, actions
+                    train_states, train_actions
                 )
             
             # 计算比率
-            ratio = torch.exp(new_log_probs - old_log_probs)
+            ratio = torch.exp(new_log_probs - train_old_log_probs)
             
             # PPO 裁剪
-            surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1 - self.ppo_clip, 1 + self.ppo_clip) * advantages
+            surr1 = ratio * train_advantages
+            surr2 = torch.clamp(ratio, 1 - self.ppo_clip, 1 + self.ppo_clip) * train_advantages
             policy_loss = -torch.min(surr1, surr2).mean()
             
             # 价值损失
-            value_loss = F.mse_loss(values.squeeze(), returns)
+            value_loss = F.mse_loss(values.view(-1), train_returns.view(-1))
             
             # 熵损失
             entropy_loss = -entropy.mean()
@@ -320,13 +428,13 @@ class MARLAgent:
             if (
                 self.aux_enabled
                 and self.aux_predictor is not None
-                and next_states is not None
-                and 0 <= self.aux_target_index < next_states.shape[1]
+                and aux_next_states is not None
+                and 0 <= self.aux_target_index < aux_next_states.shape[1]
             ):
-                action_onehot = F.one_hot(actions, num_classes=self.action_dim).float()
-                aux_input = torch.cat([states, action_onehot], dim=1)
+                action_onehot = F.one_hot(train_actions, num_classes=self.action_dim).float()
+                aux_input = torch.cat([aux_states, action_onehot], dim=1)
                 aux_pred = self.aux_predictor(aux_input).squeeze(-1)
-                aux_target = next_states[:, self.aux_target_index]
+                aux_target = aux_next_states[:, self.aux_target_index]
                 aux_loss = F.mse_loss(aux_pred, aux_target)
                 loss = loss + self.aux_weight * aux_loss
                 aux_loss_value = float(aux_loss.item())

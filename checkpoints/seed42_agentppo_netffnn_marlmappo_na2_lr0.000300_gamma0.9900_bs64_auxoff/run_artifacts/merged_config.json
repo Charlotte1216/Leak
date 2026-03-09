@@ -1,0 +1,99 @@
+{
+  "training": {
+    "num_episodes": 200,
+    "max_steps_per_episode": 500,
+    "save_interval": 50,
+    "log_interval": 10,
+    "pretrained_dir": ""
+  },
+  "marl": {
+    "algorithm": "mappo",
+    "mappo": {
+      "gamma": 0.99,
+      "gae_lambda": 0.95
+    },
+    "qmix": {
+      "gamma": 0.99,
+      "mixer_lr": 0.0003,
+      "tau": 0.005
+    }
+  },
+  "environment": {
+    "num_agents": 2,
+    "action_dim": 8,
+    "source_find_radius": 2.0,
+    "collision_penalty": 1.0,
+    "battery_penalty": 0.01,
+    "found_source_bonus": 5.0,
+    "done_bonus": 20.0,
+    "success_done_bonus": null,
+    "failure_done_penalty": 0.0,
+    "enable_collision": true,
+    "stop_on_collision": true,
+    "observe_wind": false,
+    "observe_velocity": false,
+    "distance_reward_scale": 0.0,
+    "found_source_concentration_scale": 1.0,
+    "found_source_stay_penalty": 0.0,
+    "found_source_stay_radius_scale": 1.0,
+    "uav_params": {},
+    "init_pos_mode": "random",
+    "dynamic_field": {
+      "enabled": false,
+      "dt": 1.0,
+      "keep_plume_behind_obstacle": true,
+      "wind": {
+        "enabled": false,
+        "speed_amplitude": 0.0,
+        "speed_frequency": 0.0,
+        "speed_phase": 0.0,
+        "dir_amplitude": 0.0,
+        "dir_frequency": 0.0,
+        "dir_phase": 0.0
+      },
+      "vortex": {
+        "use_strouhal": false,
+        "strouhal": 0.2
+      }
+    }
+  },
+  "agent": {
+    "algorithm": "ppo",
+    "network_type": "ffnn",
+    "learning": {
+      "lr": 0.0003,
+      "gamma": 0.99,
+      "batch_size": 64,
+      "dqn": {
+        "epsilon": 1.0,
+        "epsilon_min": 0.01,
+        "epsilon_decay": 0.995,
+        "tau": 0.005,
+        "replay_buffer_size": 10000
+      },
+      "ppo": {
+        "clip": 0.2,
+        "epochs": 4,
+        "value_coef": 0.5,
+        "entropy_coef": 0.01,
+        "aux": {
+          "enabled": false,
+          "weight": 0.0,
+          "target_index": 2,
+          "hidden_dim": 128
+        },
+        "lstm_training": {
+          "enabled": false,
+          "seq_len": 16,
+          "stride": 4
+        }
+      }
+    },
+    "device": "cuda"
+  },
+  "output": {
+    "save_dir": "./checkpoints",
+    "log_dir": "./logs"
+  },
+  "seed": 42
+}

@@ -111,6 +111,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                     "target_index": 2,
                     "hidden_dim": 128,
                 },
+                "lstm_training": {
+                    "enabled": False,
+                    "seq_len": 16,
+                    "stride": 4,
+                },
             },
         },
         "device": "cuda",
@@ -155,6 +160,9 @@ def _build_agent_config(agent_cfg: Dict[str, Any]) -> Dict[str, Any]:
     dqn_cfg = learning.get("dqn", {})
     ppo_cfg = learning.get("ppo", {})
     aux_cfg = ppo_cfg.get("aux", {})
+    lstm_training_cfg = ppo_cfg.get("lstm_training", {})
+    network_cfg = agent_cfg.get("network", {})
+    lstm_net_cfg = network_cfg.get("lstm", {})
 
     return {
         "lr": float(learning.get("lr", 3e-4)),
@@ -173,6 +181,12 @@ def _build_agent_config(agent_cfg: Dict[str, Any]) -> Dict[str, Any]:
         "aux_weight": float(aux_cfg.get("weight", 0.0)),
         "aux_target_index": int(aux_cfg.get("target_index", 2)),
         "aux_hidden_dim": int(aux_cfg.get("hidden_dim", 128)),
+        "lstm_hidden_dim": int(lstm_net_cfg.get("hidden_dim", 128)),
+        "lstm_lstm_hidden_dim": int(lstm_net_cfg.get("lstm_hidden_dim", 64)),
+        "lstm_num_layers": int(lstm_net_cfg.get("num_layers", 1)),
+        "ppo_lstm_seq_training_enabled": bool(lstm_training_cfg.get("enabled", False)),
+        "ppo_lstm_seq_len": int(lstm_training_cfg.get("seq_len", 16)),
+        "ppo_lstm_seq_stride": int(lstm_training_cfg.get("stride", 4)),
         "device": agent_cfg.get("device", "cuda"),
     }
 
