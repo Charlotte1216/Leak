@@ -65,6 +65,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "found_source_concentration_scale": 1.0,
         "found_source_stay_penalty": 0.0,
         "found_source_stay_radius_scale": 1.0,
+        "communication": {
+            "enabled": False,
+            "top_k": 2,
+            "radius": 0.0,
+            "include_concentration": True,
+            "include_battery": True,
+            "include_velocity": False,
+            "normalize_relative": True,
+        },
         "uav_params": {},
         "init_pos_mode": "random",
         "dynamic_field": {
@@ -573,6 +582,7 @@ def main() -> None:
         seed=seed,
         uav_params=uav_params,
         dynamic_field_config=env_cfg.get("dynamic_field", {}),
+        communication_config=env_cfg.get("communication", {}),
     )
 
     initial_obs = env.reset()
@@ -623,9 +633,15 @@ def main() -> None:
     batch_size = int(agent_hparams.get("batch_size", 0))
     aux_enabled = bool(agent_hparams.get("aux_enabled", False))
     aux_tag = "auxon" if aux_enabled else "auxoff"
+    communication_cfg = env_cfg.get("communication", {})
+    if not isinstance(communication_cfg, dict):
+        communication_cfg = {}
+    comm_enabled = bool(communication_cfg.get("enabled", False))
+    comm_top_k = max(0, int(communication_cfg.get("top_k", 0)))
+    comm_tag = f"commk{comm_top_k}" if comm_enabled else "commoff"
     file_tag = (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
-        f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}_{aux_tag}"
+        f"_{comm_tag}_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}_{aux_tag}"
     )
     _snapshot_run_artifacts(
         config=config,

@@ -46,6 +46,7 @@ class PlumeEnv:
         seed: int = None,
         uav_params: Dict = None,
         dynamic_field_config: Dict | None = None,
+        communication_config: Dict | None = None,
     ):
         self.field_dir = Path(field_dir)
         self.num_agents = num_agents
@@ -70,6 +71,28 @@ class PlumeEnv:
         self.dynamic_field_enabled = bool(self.dynamic_field_config.get("enabled", False))
         self.field_dt = float(self.dynamic_field_config.get("dt", 1.0))
         self.field_time = 0.0
+        self.communication_config = dict(communication_config or {})
+        self.communication_enabled = bool(self.communication_config.get("enabled", False))
+        self.communication_top_k = max(0, int(self.communication_config.get("top_k", 2)))
+        self.communication_radius = float(self.communication_config.get("radius", 0.0))
+        self.communication_include_concentration = bool(
+            self.communication_config.get("include_concentration", True)
+        )
+        self.communication_include_battery = bool(
+            self.communication_config.get("include_battery", True)
+        )
+        self.communication_include_velocity = bool(
+            self.communication_config.get("include_velocity", False)
+        )
+        self.communication_normalize_relative = bool(
+            self.communication_config.get("normalize_relative", True)
+        )
+        self.communication_feature_dim_per_neighbor = (
+            2
+            + (1 if self.communication_include_concentration else 0)
+            + (1 if self.communication_include_battery else 0)
+            + (2 if self.communication_include_velocity else 0)
+        )
 
         self.uav_params = uav_params or {}
         self.uavs: List[UAVDynamics] = []
@@ -448,15 +471,59 @@ class PlumeEnv:
 
     def _get_observations(self) -> List[np.ndarray]:
         obs = []
-        for uav in self.uavs:
-            conc = self._sample_concentration(uav.x, uav.y)
+        concentrations = [self._sample_concentration(uav.x, uav.y) for uav in self.uavs]
+        for idx, uav in enumerate(self.uavs):
+            conc = concentrations[idx]
             payload = [uav.x, uav.y, conc, uav.battery]
             if self.observe_velocity:
                 payload.extend([uav.vx, uav.vy])
             if self.observe_wind:
                 payload.extend([self.wind_speed, math.cos(self.wind_dir), math.sin(self.wind_dir)])
+            if self.communication_enabled and self.communication_top_k > 0:
+                payload.extend(self._build_communication_features(idx, concentrations))
             obs.append(np.array(payload, dtype=float))
         return obs
+
+    def _build_communication_features(
+        self,
+        agent_idx: int,
+        concentrations: List[float],
+    ) -> List[float]:
+        """Build fixed-size Top-K neighbor communication features for one agent."""
+        self_uav = self.uavs[agent_idx]
+        neighbors: List[Tuple[float, int]] = []
+        for other_idx, other_uav in enumerate(self.uavs):
+            if other_idx == agent_idx:
+                continue
+            dist = math.hypot(other_uav.x - self_uav.x, other_uav.y - self_uav.y)
+            if self.communication_radius > 0.0 and dist > self.communication_radius:
+                continue
+            neighbors.append((dist, other_idx))
+
+        neighbors.sort(key=lambda item: item[0])
+        features: List[float] = []
+        normalizer = self._max_distance if (self.communication_normalize_relative and self._max_distance) else 1.0
+        if normalizer is None or normalizer <= 0.0:
+            normalizer = 1.0
+
+        for _, other_idx in neighbors[: self.communication_top_k]:
+            other_uav = self.uavs[other_idx]
+            dx = (other_uav.x - self_uav.x) / normalizer
+            dy = (other_uav.y - self_uav.y) / normalizer
+            features.extend([float(dx), float(dy)])
+            if self.communication_include_concentration:
+                features.append(float(concentrations[other_idx]))
+            if self.communication_include_battery:
+                features.append(float(other_uav.battery))
+            if self.communication_include_velocity:
+                features.extend([float(other_uav.vx), float(other_uav.vy)])
+
+        selected = min(len(neighbors), self.communication_top_k)
+        missing = self.communication_top_k - selected
+        if missing > 0:
+            features.extend([0.0] * (missing * self.communication_feature_dim_per_neighbor))
+
+        return features
 
     def _sample_init_pos(self) -> Tuple[float, float]:
         if self.init_pos_mode == "random":

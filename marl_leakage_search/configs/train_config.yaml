@@ -42,6 +42,15 @@ environment:
   found_source_stay_penalty: 0.15  # 仍有未发现源时，在已发现源附近停留惩罚；推荐范围: 0.0~0.5
   found_source_stay_radius_scale: 1.5  # 停留惩罚半径倍数（= source_find_radius * 该值）；推荐范围: 1.0~2.5
 
+  communication:
+    enabled: true  # 是否启用多无人机通信特征；推荐: 先 false 做基线，再设 true 做对比
+    top_k: 2  # 每个智能体接收最近 K 个邻居信息；推荐范围: 1~3（不超过 num_agents-1）
+    radius: 0.0  # 通信半径，<=0 表示全局可通信；推荐范围: 0 或 10~80（按场地尺度）
+    include_concentration: true  # 邻居特征是否包含其当前位置浓度
+    include_battery: true  # 邻居特征是否包含其电量
+    include_velocity: false  # 邻居特征是否包含其速度 [vx, vy]
+    normalize_relative: true  # 相对位置(dx,dy)是否按场地对角线归一化
+
   uav_params:
     max_speed: 5.0  # 最大速度；推荐范围: 2.0~8.0
     max_acceleration: 1.0  # 最大加速度；推荐范围: 0.5~3.0
