@@ -73,10 +73,12 @@ def _file_tag(
     lr: float,
     gamma: float,
     batch_size: int,
+    aux_enabled: bool,
 ) -> str:
+    aux_tag = "auxon" if aux_enabled else "auxoff"
     return (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
-        f"_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}"
+        f"_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}_{aux_tag}"
     )
 
 
@@ -89,9 +91,10 @@ def _avg_reward_csv_path(
     lr: float,
     gamma: float,
     batch_size: int,
+    aux_enabled: bool,
 ) -> Path:
     return EXPERIMENT_DIR / (
-        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size)}"
+        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, aux_enabled)}"
         "_avg_reward_trend.csv"
     )
 
@@ -105,9 +108,10 @@ def _log_file_path(
     lr: float,
     gamma: float,
     batch_size: int,
+    aux_enabled: bool,
 ) -> Path:
     return EXPERIMENT_DIR / (
-        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size)}.log"
+        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, aux_enabled)}.log"
     )
 
 
@@ -194,7 +198,7 @@ def _prepare_configs(
     gamma: float,
     batch_size: int,
     work_dir: Path,
-) -> Tuple[Path, Path, str, str, str, int]:
+) -> Tuple[Path, Path, str, str, str, int, bool]:
     train_cfg = _load_yaml(DEFAULT_TRAIN_CFG)
     agent_cfg = _load_yaml(DEFAULT_AGENT_CFG)
 
@@ -216,6 +220,12 @@ def _prepare_configs(
     )
     marl_algorithm = _normalize_algorithm(train_cfg.get("marl", {}).get("algorithm"), "mappo")
     num_agents = int(train_cfg.get("environment", {}).get("num_agents", 2))
+    aux_enabled = bool(
+        agent_cfg.get("learning", {})
+        .get("ppo", {})
+        .get("aux", {})
+        .get("enabled", False)
+    )
     train_cfg.setdefault("marl", {})
     if marl_algorithm == "mappo":
         train_cfg["marl"].setdefault("mappo", {})
@@ -224,13 +234,31 @@ def _prepare_configs(
         train_cfg["marl"].setdefault("qmix", {})
         train_cfg["marl"]["qmix"]["gamma"] = float(gamma)
 
-    tag = _file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size)
+    tag = _file_tag(
+        seed,
+        agent_algorithm,
+        network_type,
+        marl_algorithm,
+        num_agents,
+        lr,
+        gamma,
+        batch_size,
+        aux_enabled,
+    )
     train_cfg_path = work_dir / f"train_config_{tag}.yaml"
     agent_cfg_path = work_dir / f"agent_config_{tag}.yaml"
 
     _save_yaml(train_cfg_path, train_cfg)
     _save_yaml(agent_cfg_path, agent_cfg)
-    return train_cfg_path, agent_cfg_path, agent_algorithm, network_type, marl_algorithm, num_agents
+    return (
+        train_cfg_path,
+        agent_cfg_path,
+        agent_algorithm,
+        network_type,
+        marl_algorithm,
+        num_agents,
+        aux_enabled,
+    )
 
 
 def custom_json_encoder(obj):
@@ -253,16 +281,35 @@ def main() -> None:
     combos = list(itertools.product(SEEDS, LEARNING_RATES, GAMMAS, BATCH_SIZES))
 
     def _run_combo(seed: int, lr: float, gamma: float, batch_size: int):
-        train_cfg_path, agent_cfg_path, agent_algorithm, network_type, marl_algorithm, num_agents = _prepare_configs(
+        (
+            train_cfg_path,
+            agent_cfg_path,
+            agent_algorithm,
+            network_type,
+            marl_algorithm,
+            num_agents,
+            aux_enabled,
+        ) = _prepare_configs(
             seed, lr, gamma, batch_size, work_dir
         )
         print(
             "Running: "
             f"seed={seed}, agent={agent_algorithm}, net={network_type}, marl={marl_algorithm}, num_agents={num_agents}, "
-            f"lr={lr}, gamma={gamma}, batch_size={batch_size}"
+            f"lr={lr}, gamma={gamma}, batch_size={batch_size}, aux_enabled={aux_enabled}"
         )
         code = _run_train(train_cfg_path, agent_cfg_path)
-        return seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, code
+        return (
+            seed,
+            agent_algorithm,
+            network_type,
+            marl_algorithm,
+            num_agents,
+            lr,
+            gamma,
+            batch_size,
+            aux_enabled,
+            code,
+        )
 
     with ThreadPoolExecutor(max_workers=PARALLEL_JOBS) as executor:
         combo_iter = iter(combos)
@@ -282,16 +329,43 @@ def main() -> None:
         while pending:
             for future in as_completed(list(pending)):
                 pending.remove(future)
-                seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, code = future.result()
+                (
+                    seed,
+                    agent_algorithm,
+                    network_type,
+                    marl_algorithm,
+                    num_agents,
+                    lr,
+                    gamma,
+                    batch_size,
+                    aux_enabled,
+                    code,
+                ) = future.result()
 
                 if code != 0:
                     print(f"Train failed with code {code}, skipping.")
                 else:
                     csv_path = _avg_reward_csv_path(
-                        seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size
+                        seed,
+                        agent_algorithm,
+                        network_type,
+                        marl_algorithm,
+                        num_agents,
+                        lr,
+                        gamma,
+                        batch_size,
+                        aux_enabled,
                     )
                     log_path = _log_file_path(
-                        seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size
+                        seed,
+                        agent_algorithm,
+                        network_type,
+                        marl_algorithm,
+                        num_agents,
+                        lr,
+                        gamma,
+                        batch_size,
+                        aux_enabled,
                     )
                     rewards = _read_avg_rewards(csv_path)
                     final_metrics = _read_final_metrics(log_path)
@@ -307,6 +381,7 @@ def main() -> None:
                             "lr": lr,
                             "gamma": gamma,
                             "batch_size": batch_size,
+                            "aux_enabled": aux_enabled,
                             "trend_ok": ok,
                             "slope": slope,
                             "points": len(rewards),

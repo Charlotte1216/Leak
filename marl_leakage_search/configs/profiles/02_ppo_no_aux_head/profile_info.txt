@@ -1,0 +1,7 @@
+profile_name: 02_ppo_no_aux_head
+algorithm: MAPPO (agent uses PPO)
+feature: auxiliary prediction head disabled
+label: PPO no aux head
+files:
+- train_config_ppo_no_aux_head.yaml
+- agent_config_ppo_no_aux_head.yaml

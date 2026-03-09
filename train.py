@@ -222,6 +222,13 @@ def _snapshot_run_artifacts(
             "agent_config_path": str(agent_cfg_src.resolve()),
             "run_log_dir": str(run_log_dir.resolve()),
             "run_checkpoint_dir": str(run_save_dir.resolve()),
+            "aux_enabled": bool(
+                config.get("agent", {})
+                .get("learning", {})
+                .get("ppo", {})
+                .get("aux", {})
+                .get("enabled", False)
+            ),
         },
         run_artifact_dir / "run_meta.json",
     )
@@ -600,9 +607,11 @@ def main() -> None:
     agent_gamma_value = float(agent_hparams.get("gamma", 0.0))
     gamma_value = float(trainer_cfg.get("gamma", agent_gamma_value))
     batch_size = int(agent_hparams.get("batch_size", 0))
+    aux_enabled = bool(agent_hparams.get("aux_enabled", False))
+    aux_tag = "auxon" if aux_enabled else "auxoff"
     file_tag = (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
-        f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}"
+        f"_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}_{aux_tag}"
     )
     _snapshot_run_artifacts(
         config=config,

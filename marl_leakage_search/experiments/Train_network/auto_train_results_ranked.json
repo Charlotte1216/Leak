@@ -9,8 +9,8 @@
     "gamma": 0.9,
     "batch_size": 64,
     "trend_ok": true,
-    "slope": 0.022349919879611563,
-    "points": 800,
+    "slope": 0.0038417090812021553,
+    "points": 2093,
     "rank": 1
   },
   {
@@ -23,8 +23,8 @@
     "gamma": 0.9,
     "batch_size": 64,
     "trend_ok": true,
-    "slope": 0.018971755009019247,
-    "points": 800,
+    "slope": 0.00374340151358069,
+    "points": 2118,
     "rank": 2
   }
 ]

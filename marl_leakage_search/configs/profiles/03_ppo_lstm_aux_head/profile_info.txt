@@ -1,0 +1,7 @@
+profile_name: 03_ppo_lstm_aux_head
+algorithm: MAPPO (agent uses PPO)
+feature: LSTM backbone + auxiliary prediction head enabled
+label: PPO LSTM aux head
+files:
+- train_config_ppo_lstm_aux_head.yaml
+- agent_config_ppo_lstm_aux_head.yaml

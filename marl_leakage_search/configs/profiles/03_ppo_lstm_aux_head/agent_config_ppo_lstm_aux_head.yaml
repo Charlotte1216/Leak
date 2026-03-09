@@ -1,0 +1,54 @@
+﻿# agent_config.yaml
+# 鏅鸿兘浣撻厤缃弬鏁?
+
+# 缃戠粶缁撴瀯閰嶇疆
+network:
+  type: "lstm"  # 鍙€? "ffnn", "lstm", "transformer"
+  hidden_dims: [128, 128]  # 闅愯棌灞傜淮搴?
+  activation: "relu"  # 婵€娲诲嚱鏁? "relu", "tanh"
+  
+  # LSTM 鐗瑰畾鍙傛暟
+  lstm:
+    hidden_dim: 128
+    lstm_hidden_dim: 64
+    num_layers: 1
+  
+  # Transformer 鐗瑰畾鍙傛暟
+  transformer:
+    hidden_dim: 128
+    num_heads: 4
+    num_layers: 2
+    seq_len: 10
+
+# 绠楁硶閰嶇疆
+algorithm: "ppo"  # 鍙€? "ppo", "dqn"
+
+# 瀛︿範鍙傛暟
+learning:
+  lr: 3e-4  # 瀛︿範鐜?
+  gamma: 0.99  # 鎶樻墸鍥犲瓙
+  batch_size: 64  # 鎵规澶у皬
+  
+  # DQN 鐗瑰畾鍙傛暟
+  dqn:
+    epsilon: 1.0  # 鍒濆鎺㈢储鐜?
+    epsilon_min: 0.01  # 鏈€灏忔帰绱㈢巼
+    epsilon_decay: 0.995  # 鎺㈢储鐜囪“鍑?
+    tau: 0.005  # 杞洿鏂板弬鏁?
+    replay_buffer_size: 10000  # 缁忛獙鍥炴斁缂撳啿鍖哄ぇ灏?
+  
+  # PPO 鐗瑰畾鍙傛暟
+  ppo:
+    clip: 0.2  # PPO 瑁佸壀鍙傛暟
+    epochs: 4  # PPO 鏇存柊杞暟
+    value_coef: 0.5  # 浠峰€兼崯澶辩郴鏁?
+    entropy_coef: 0.003  # 鐔垫崯澶辩郴鏁?
+    aux:
+      enabled: true  # 鏄惁鍚敤杈呭姪棰勬祴澶达紙棰勬祴涓嬩竴鏃跺埢娴撳害锛?
+      weight: 0.1  # 杈呭姪鎹熷け鏉冮噸 位锛屽缓璁寖鍥?0.05~0.2
+      target_index: 2  # 棰勬祴鐩爣鍦ㄨ娴嬪悜閲忎腑鐨勭储寮曪紙娴撳害榛樿鍦ㄧ 3 缁达級
+      hidden_dim: 128  # 杈呭姪澶撮殣钘忓眰瀹藉害
+
+# 璁惧閰嶇疆
+device: "cuda"  # 鍙€? "cuda", "cpu"
+
