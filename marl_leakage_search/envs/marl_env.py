@@ -87,11 +87,26 @@ class PlumeEnv:
         self.communication_normalize_relative = bool(
             self.communication_config.get("normalize_relative", True)
         )
+        channel_cfg = self.communication_config.get("channel", {})
+        if not isinstance(channel_cfg, dict):
+            channel_cfg = {}
+        self.communication_channel_enabled = bool(channel_cfg.get("enabled", False))
+        self.communication_channel_mode = str(channel_cfg.get("mode", "none")).strip().lower()
+        self.communication_nlos_gain = float(channel_cfg.get("nlos_gain", 0.35))
+        self.communication_nlos_noise_std = max(0.0, float(channel_cfg.get("nlos_noise_std", 0.0)))
+        self.communication_los_drop_prob = min(
+            1.0, max(0.0, float(channel_cfg.get("los_drop_prob", 0.0)))
+        )
+        self.communication_nlos_drop_prob = min(
+            1.0, max(0.0, float(channel_cfg.get("nlos_drop_prob", 0.0)))
+        )
+        self.communication_add_link_flag = bool(channel_cfg.get("add_link_flag", False))
         self.communication_feature_dim_per_neighbor = (
             2
             + (1 if self.communication_include_concentration else 0)
             + (1 if self.communication_include_battery else 0)
             + (2 if self.communication_include_velocity else 0)
+            + (2 if self.communication_add_link_flag else 0)
         )
 
         self.uav_params = uav_params or {}
@@ -508,15 +523,43 @@ class PlumeEnv:
 
         for _, other_idx in neighbors[: self.communication_top_k]:
             other_uav = self.uavs[other_idx]
+            is_los = self._has_line_of_sight(self_uav.x, self_uav.y, other_uav.x, other_uav.y)
+            link_gain = 1.0
+            drop_prob = 0.0
+            noise_std = 0.0
+            if self.communication_channel_enabled and self.communication_channel_mode == "los_nlos":
+                if not is_los:
+                    link_gain = self.communication_nlos_gain
+                    noise_std = self.communication_nlos_noise_std
+                drop_prob = self.communication_los_drop_prob if is_los else self.communication_nlos_drop_prob
+
+            if drop_prob > 0.0 and self.rng.random() < drop_prob:
+                features.extend([0.0] * self.communication_feature_dim_per_neighbor)
+                continue
+
             dx = (other_uav.x - self_uav.x) / normalizer
             dy = (other_uav.y - self_uav.y) / normalizer
-            features.extend([float(dx), float(dy)])
+            neighbor_features: List[float] = [float(dx), float(dy)]
             if self.communication_include_concentration:
-                features.append(float(concentrations[other_idx]))
+                neighbor_features.append(float(concentrations[other_idx]))
             if self.communication_include_battery:
-                features.append(float(other_uav.battery))
+                neighbor_features.append(float(other_uav.battery))
             if self.communication_include_velocity:
-                features.extend([float(other_uav.vx), float(other_uav.vy)])
+                neighbor_features.extend([float(other_uav.vx), float(other_uav.vy)])
+
+            if self.communication_channel_enabled and self.communication_channel_mode == "los_nlos":
+                processed = []
+                for value in neighbor_features:
+                    noisy = value * link_gain
+                    if noise_std > 0.0:
+                        noisy += self.rng.gauss(0.0, noise_std)
+                    processed.append(float(noisy))
+                neighbor_features = processed
+
+            if self.communication_add_link_flag:
+                neighbor_features.extend([1.0 if is_los else 0.0, float(link_gain)])
+
+            features.extend(neighbor_features)
 
         selected = min(len(neighbors), self.communication_top_k)
         missing = self.communication_top_k - selected
@@ -524,6 +567,39 @@ class PlumeEnv:
             features.extend([0.0] * (missing * self.communication_feature_dim_per_neighbor))
 
         return features
+
+    def _has_line_of_sight(self, x1: float, y1: float, x2: float, y2: float) -> bool:
+        """
+        LOS is blocked if the segment between two UAVs intersects any obstacle circle.
+        """
+        if self.obstacles is None or len(self.obstacles) == 0:
+            return True
+        for ox, oy, r in self.obstacles:
+            if self._segment_intersects_circle(x1, y1, x2, y2, float(ox), float(oy), float(r)):
+                return False
+        return True
+
+    @staticmethod
+    def _segment_intersects_circle(
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        cx: float,
+        cy: float,
+        radius: float,
+    ) -> bool:
+        dx = x2 - x1
+        dy = y2 - y1
+        rr = max(0.0, radius) ** 2
+        denom = dx * dx + dy * dy
+        if denom <= 1e-12:
+            return (x1 - cx) ** 2 + (y1 - cy) ** 2 <= rr
+        t = ((cx - x1) * dx + (cy - y1) * dy) / denom
+        t = max(0.0, min(1.0, t))
+        px = x1 + t * dx
+        py = y1 + t * dy
+        return (px - cx) ** 2 + (py - cy) ** 2 <= rr
 
     def _sample_init_pos(self) -> Tuple[float, float]:
         if self.init_pos_mode == "random":

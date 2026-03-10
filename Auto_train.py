@@ -70,15 +70,22 @@ def _file_tag(
     network_type: str,
     marl_algorithm: str,
     num_agents: int,
+    comm_enabled: bool,
+    comm_top_k: int,
+    comm_channel_enabled: bool,
+    comm_channel_mode: str,
     lr: float,
     gamma: float,
     batch_size: int,
     aux_enabled: bool,
 ) -> str:
     aux_tag = "auxon" if aux_enabled else "auxoff"
+    comm_tag = f"commk{int(comm_top_k)}" if bool(comm_enabled) else "commoff"
+    channel_mode = str(comm_channel_mode).strip().lower() or "none"
+    channel_tag = f"ch{channel_mode}" if bool(comm_channel_enabled) else "chnone"
     return (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
-        f"_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}_{aux_tag}"
+        f"_{comm_tag}_{channel_tag}_lr{lr:.6f}_gamma{gamma:.4f}_bs{batch_size}_{aux_tag}"
     )
 
 
@@ -88,13 +95,17 @@ def _avg_reward_csv_path(
     network_type: str,
     marl_algorithm: str,
     num_agents: int,
+    comm_enabled: bool,
+    comm_top_k: int,
+    comm_channel_enabled: bool,
+    comm_channel_mode: str,
     lr: float,
     gamma: float,
     batch_size: int,
     aux_enabled: bool,
 ) -> Path:
     return EXPERIMENT_DIR / (
-        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, aux_enabled)}"
+        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, comm_enabled, comm_top_k, comm_channel_enabled, comm_channel_mode, lr, gamma, batch_size, aux_enabled)}"
         "_avg_reward_trend.csv"
     )
 
@@ -105,13 +116,17 @@ def _log_file_path(
     network_type: str,
     marl_algorithm: str,
     num_agents: int,
+    comm_enabled: bool,
+    comm_top_k: int,
+    comm_channel_enabled: bool,
+    comm_channel_mode: str,
     lr: float,
     gamma: float,
     batch_size: int,
     aux_enabled: bool,
 ) -> Path:
     return EXPERIMENT_DIR / (
-        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, lr, gamma, batch_size, aux_enabled)}.log"
+        f"{_file_tag(seed, agent_algorithm, network_type, marl_algorithm, num_agents, comm_enabled, comm_top_k, comm_channel_enabled, comm_channel_mode, lr, gamma, batch_size, aux_enabled)}.log"
     )
 
 
@@ -198,7 +213,7 @@ def _prepare_configs(
     gamma: float,
     batch_size: int,
     work_dir: Path,
-) -> Tuple[Path, Path, str, str, str, int, bool]:
+) -> Tuple[Path, Path, str, str, str, int, bool, int, bool, str, bool]:
     train_cfg = _load_yaml(DEFAULT_TRAIN_CFG)
     agent_cfg = _load_yaml(DEFAULT_AGENT_CFG)
 
@@ -220,6 +235,16 @@ def _prepare_configs(
     )
     marl_algorithm = _normalize_algorithm(train_cfg.get("marl", {}).get("algorithm"), "mappo")
     num_agents = int(train_cfg.get("environment", {}).get("num_agents", 2))
+    communication_cfg = train_cfg.get("environment", {}).get("communication", {})
+    if not isinstance(communication_cfg, dict):
+        communication_cfg = {}
+    comm_enabled = bool(communication_cfg.get("enabled", False))
+    comm_top_k = int(communication_cfg.get("top_k", 0))
+    comm_channel_cfg = communication_cfg.get("channel", {})
+    if not isinstance(comm_channel_cfg, dict):
+        comm_channel_cfg = {}
+    comm_channel_enabled = bool(comm_channel_cfg.get("enabled", False))
+    comm_channel_mode = _normalize_algorithm(comm_channel_cfg.get("mode", "none"), "none")
     aux_enabled = bool(
         agent_cfg.get("learning", {})
         .get("ppo", {})
@@ -240,6 +265,10 @@ def _prepare_configs(
         network_type,
         marl_algorithm,
         num_agents,
+        comm_enabled,
+        comm_top_k,
+        comm_channel_enabled,
+        comm_channel_mode,
         lr,
         gamma,
         batch_size,
@@ -257,6 +286,10 @@ def _prepare_configs(
         network_type,
         marl_algorithm,
         num_agents,
+        comm_enabled,
+        comm_top_k,
+        comm_channel_enabled,
+        comm_channel_mode,
         aux_enabled,
     )
 
@@ -288,6 +321,10 @@ def main() -> None:
             network_type,
             marl_algorithm,
             num_agents,
+            comm_enabled,
+            comm_top_k,
+            comm_channel_enabled,
+            comm_channel_mode,
             aux_enabled,
         ) = _prepare_configs(
             seed, lr, gamma, batch_size, work_dir
@@ -295,6 +332,7 @@ def main() -> None:
         print(
             "Running: "
             f"seed={seed}, agent={agent_algorithm}, net={network_type}, marl={marl_algorithm}, num_agents={num_agents}, "
+            f"comm_enabled={comm_enabled}, comm_top_k={comm_top_k}, channel={comm_channel_mode if comm_channel_enabled else 'none'}, "
             f"lr={lr}, gamma={gamma}, batch_size={batch_size}, aux_enabled={aux_enabled}"
         )
         code = _run_train(train_cfg_path, agent_cfg_path)
@@ -304,6 +342,10 @@ def main() -> None:
             network_type,
             marl_algorithm,
             num_agents,
+            comm_enabled,
+            comm_top_k,
+            comm_channel_enabled,
+            comm_channel_mode,
             lr,
             gamma,
             batch_size,
@@ -335,6 +377,10 @@ def main() -> None:
                     network_type,
                     marl_algorithm,
                     num_agents,
+                    comm_enabled,
+                    comm_top_k,
+                    comm_channel_enabled,
+                    comm_channel_mode,
                     lr,
                     gamma,
                     batch_size,
@@ -351,6 +397,10 @@ def main() -> None:
                         network_type,
                         marl_algorithm,
                         num_agents,
+                        comm_enabled,
+                        comm_top_k,
+                        comm_channel_enabled,
+                        comm_channel_mode,
                         lr,
                         gamma,
                         batch_size,
@@ -362,6 +412,10 @@ def main() -> None:
                         network_type,
                         marl_algorithm,
                         num_agents,
+                        comm_enabled,
+                        comm_top_k,
+                        comm_channel_enabled,
+                        comm_channel_mode,
                         lr,
                         gamma,
                         batch_size,
@@ -378,6 +432,10 @@ def main() -> None:
                             "network_type": network_type,
                             "marl_algorithm": marl_algorithm,
                             "num_agents": num_agents,
+                            "comm_enabled": comm_enabled,
+                            "comm_top_k": comm_top_k,
+                            "comm_channel_enabled": comm_channel_enabled,
+                            "comm_channel_mode": comm_channel_mode,
                             "lr": lr,
                             "gamma": gamma,
                             "batch_size": batch_size,

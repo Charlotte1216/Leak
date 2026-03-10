@@ -50,6 +50,14 @@ environment:
     include_battery: true  # 邻居特征是否包含其电量
     include_velocity: false  # 邻居特征是否包含其速度 [vx, vy]
     normalize_relative: true  # 相对位置(dx,dy)是否按场地对角线归一化
+    channel:
+      enabled: true  # 是否启用通信信道模型（LOS/NLOS）
+      mode: "los_nlos"  # 可选: "none" / "los_nlos"
+      nlos_gain: 0.35  # NLOS 衰减系数；推荐范围: 0.2~0.8
+      nlos_noise_std: 0.01  # NLOS 噪声标准差；推荐范围: 0.0~0.05
+      los_drop_prob: 0.02  # LOS 丢包率；推荐范围: 0.0~0.1
+      nlos_drop_prob: 0.20  # NLOS 丢包率；推荐范围: 0.1~0.5
+      add_link_flag: true  # 是否追加链路特征 [is_los, link_gain]
 
   uav_params:
     max_speed: 5.0  # 最大速度；推荐范围: 2.0~8.0

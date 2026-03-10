@@ -73,6 +73,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "include_battery": True,
             "include_velocity": False,
             "normalize_relative": True,
+            "channel": {
+                "enabled": False,
+                "mode": "none",  # "none" or "los_nlos"
+                "nlos_gain": 0.35,
+                "nlos_noise_std": 0.0,
+                "los_drop_prob": 0.0,
+                "nlos_drop_prob": 0.0,
+                "add_link_flag": False,
+            },
         },
         "uav_params": {},
         "init_pos_mode": "random",
@@ -639,9 +648,15 @@ def main() -> None:
     comm_enabled = bool(communication_cfg.get("enabled", False))
     comm_top_k = max(0, int(communication_cfg.get("top_k", 0)))
     comm_tag = f"commk{comm_top_k}" if comm_enabled else "commoff"
+    comm_channel_cfg = communication_cfg.get("channel", {})
+    if not isinstance(comm_channel_cfg, dict):
+        comm_channel_cfg = {}
+    comm_channel_enabled = bool(comm_channel_cfg.get("enabled", False))
+    comm_channel_mode = str(comm_channel_cfg.get("mode", "none")).strip().lower()
+    channel_tag = f"ch{comm_channel_mode}" if comm_channel_enabled else "chnone"
     file_tag = (
         f"seed{seed}_agent{agent_algorithm}_net{network_type}_marl{marl_algorithm}_na{num_agents}"
-        f"_{comm_tag}_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}_{aux_tag}"
+        f"_{comm_tag}_{channel_tag}_lr{lr_value:.6f}_gamma{gamma_value:.4f}_bs{batch_size}_{aux_tag}"
     )
     _snapshot_run_artifacts(
         config=config,
