@@ -36,7 +36,7 @@ EXPERIMENT_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_netw
 # GAMMAS = [0.9, 0.95, 0.99]
 # BATCH_SIZES = [64]
 
-SEEDS = [42, 1024]
+SEEDS = [276344]
 LEARNING_RATES = [1e-4]
 GAMMAS = [0.9]
 BATCH_SIZES = [64]

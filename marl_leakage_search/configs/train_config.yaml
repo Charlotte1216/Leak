@@ -54,8 +54,22 @@ environment:
   uav_params:
     max_speed: 5.0  # 最大速度；推荐范围: 2.0~8.0
     max_acceleration: 1.0  # 最大加速度；推荐范围: 0.5~3.0
-    max_battery: 150.0  # 最大电量；推荐范围: 80~300
-    energy_consumption_rate: 0.07  # 单位路程电耗；推荐范围: 0.01~0.2
+    max_battery: 200.0  # 最大电量；推荐范围: 80~300
+    energy_model: "rotorcraft"  # 能耗模型："linear" 或 "rotorcraft"；推荐先用 rotorcraft
+    energy_consumption_rate: 0.07  # linear 模型单位路程电耗；推荐范围: 0.01~0.2
+    # rotorcraft 模型参数（与你给的公式一致）
+    w: 40.0  # 重量(N)
+    k: 0.1
+    R: 0.4
+    deta: 0.012
+    Utip: 120.0
+    d0: 0.6
+    ro: 1.225
+    s: 0.05
+    A: 0.503
+    omiga: 300.0
+    rotorcraft_energy_scale: 0.001  # 能量到电池单位的缩放；推荐范围: 5e-4~5e-3
+    rotorcraft_speed_epsilon: 0.001  # 避免 x=0 数值问题
     dt: 1.0  # UAV 动力学时间步长；推荐范围: 0.5~1.0（通常与 dynamic_field.dt 协调）
 
   init_pos_mode: "random"  # 初始位置模式；当前可选: "random"
