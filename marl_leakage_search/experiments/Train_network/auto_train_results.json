@@ -1,28 +1,30 @@
 [
   {
-    "seed": 1024,
-    "agent_algorithm": "ppo",
-    "network_type": "ffnn",
-    "marl_algorithm": "mappo",
-    "num_agents": 4,
-    "lr": 0.0001,
-    "gamma": 0.9,
-    "batch_size": 64,
-    "trend_ok": true,
-    "slope": 0.00374340151358069,
-    "points": 2118
-  },
-  {
     "seed": 42,
     "agent_algorithm": "ppo",
-    "network_type": "ffnn",
+    "network_type": "lstm",
     "marl_algorithm": "mappo",
     "num_agents": 4,
     "lr": 0.0001,
     "gamma": 0.9,
     "batch_size": 64,
+    "aux_enabled": false,
     "trend_ok": true,
-    "slope": 0.0038417090812021553,
-    "points": 2093
+    "slope": 0.01710873515607803,
+    "points": 1006
+  },
+  {
+    "seed": 1024,
+    "agent_algorithm": "ppo",
+    "network_type": "lstm",
+    "marl_algorithm": "mappo",
+    "num_agents": 4,
+    "lr": 0.0001,
+    "gamma": 0.9,
+    "batch_size": 64,
+    "aux_enabled": false,
+    "trend_ok": true,
+    "slope": 0.015221826599991736,
+    "points": 800
   }
 ]
