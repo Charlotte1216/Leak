@@ -1,0 +1,42 @@
+[
+  {
+    "variant": "ffnn_no_aux",
+    "n_runs": 1,
+    "success_rate_tail_mean": 0.0,
+    "success_rate_tail_std": 0.0,
+    "found_ratio_tail_mean": 0.3,
+    "found_ratio_tail_std": 0.0,
+    "avg_reward_tail_mean": 5.6868978797160885,
+    "avg_reward_tail_std": 0.0
+  },
+  {
+    "variant": "ffnn_aux",
+    "n_runs": 1,
+    "success_rate_tail_mean": 0.0,
+    "success_rate_tail_std": 0.0,
+    "found_ratio_tail_mean": 0.0,
+    "found_ratio_tail_std": 0.0,
+    "avg_reward_tail_mean": -3.211389534940829,
+    "avg_reward_tail_std": 0.0
+  },
+  {
+    "variant": "lstm_no_aux",
+    "n_runs": 1,
+    "success_rate_tail_mean": 0.0,
+    "success_rate_tail_std": 0.0,
+    "found_ratio_tail_mean": 0.0,
+    "found_ratio_tail_std": 0.0,
+    "avg_reward_tail_mean": -3.040924155294839,
+    "avg_reward_tail_std": 0.0
+  },
+  {
+    "variant": "lstm_aux",
+    "n_runs": 1,
+    "success_rate_tail_mean": 0.0,
+    "success_rate_tail_std": 0.0,
+    "found_ratio_tail_mean": 0.0,
+    "found_ratio_tail_std": 0.0,
+    "avg_reward_tail_mean": -3.074682549218219,
+    "avg_reward_tail_std": 0.0
+  }
+]

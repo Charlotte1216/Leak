@@ -1,16 +1,20 @@
 [
   {
-    "seed": 2344,
+    "seed": 276344,
     "agent_algorithm": "ppo",
     "network_type": "ffnn",
     "marl_algorithm": "mappo",
     "num_agents": 4,
+    "comm_enabled": true,
+    "comm_top_k": 2,
+    "comm_channel_enabled": true,
+    "comm_channel_mode": "los_nlos",
     "lr": 0.0001,
     "gamma": 0.9,
     "batch_size": 64,
     "aux_enabled": true,
-    "trend_ok": false,
-    "slope": -Infinity,
-    "points": 0
+    "trend_ok": true,
+    "slope": 0.044914994271064115,
+    "points": 800
   }
 ]

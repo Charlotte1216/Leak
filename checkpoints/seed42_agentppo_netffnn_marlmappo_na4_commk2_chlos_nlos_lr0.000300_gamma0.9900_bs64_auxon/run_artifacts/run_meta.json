@@ -1,0 +1,8 @@
+{
+  "file_tag": "seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000300_gamma0.9900_bs64_auxon",
+  "train_config_path": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\marl_leakage_search\\experiments\\Train_network\\ablation_configs\\20260311_135303\\train_config_ffnn_aux_seed42.yaml",
+  "agent_config_path": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\marl_leakage_search\\experiments\\Train_network\\ablation_configs\\20260311_135303\\agent_config_ffnn_aux_seed42.yaml",
+  "run_log_dir": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\logs\\seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000300_gamma0.9900_bs64_auxon",
+  "run_checkpoint_dir": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\checkpoints\\seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000300_gamma0.9900_bs64_auxon",
+  "aux_enabled": true
+}

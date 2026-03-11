@@ -3,7 +3,7 @@
 
 # 网络结构配置
 network:
-  type: "ffnn"  # 可选: "ffnn", "lstm", "transformer"
+  type: "lstm"  # 可选: "ffnn", "lstm", "transformer"
   hidden_dims: [128, 128]  # 隐藏层维度
   activation: "relu"  # 激活函数: "relu", "tanh"
   

@@ -1,0 +1,5 @@
+variant,n_runs,success_rate_tail_mean,success_rate_tail_std,found_ratio_tail_mean,found_ratio_tail_std,avg_reward_tail_mean,avg_reward_tail_std
+ffnn_no_aux,1,0.0,0.0,0.3,0.0,5.6868978797160885,0.0
+ffnn_aux,1,0.0,0.0,0.0,0.0,-3.211389534940829,0.0
+lstm_no_aux,1,0.0,0.0,0.0,0.0,-3.040924155294839,0.0
+lstm_aux,1,0.0,0.0,0.0,0.0,-3.074682549218219,0.0
