@@ -2,7 +2,7 @@
 # 训练配置参数（每个字段都带中文说明和推荐取值范围）
 
 training:
-  num_episodes: 8000  # 总训练回合数；推荐范围: 2000~20000（动态环境建议 >= 8000）
+  num_episodes: 3000  # 总训练回合数；推荐范围: 2000~20000（动态环境建议 >= 8000）
   max_steps_per_episode: 1000  # 每回合最大步数；推荐范围: 300~1500
   save_interval: 100  # 保存模型间隔（按回合）；推荐范围: 50~500
   eval_interval: 50  # 评估间隔（按回合）；推荐范围: 20~200（如未使用评估也可保留）
@@ -62,7 +62,7 @@ environment:
   uav_params:
     max_speed: 5.0  # 最大速度；推荐范围: 2.0~8.0
     max_acceleration: 1.0  # 最大加速度；推荐范围: 0.5~3.0
-    max_battery: 200.0  # 最大电量；推荐范围: 80~300
+    max_battery: 473  # 最大电量；推荐范围: 80~300 (
     energy_model: "rotorcraft"  # 能耗模型："linear" 或 "rotorcraft"；推荐先用 rotorcraft
     energy_consumption_rate: 0.07  # linear 模型单位路程电耗；推荐范围: 0.01~0.2
     # rotorcraft 模型参数（与你给的公式一致）

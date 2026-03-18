@@ -375,7 +375,6 @@ class PlumeEnv:
             raise FileNotFoundError(f"No .npz files found in {self.field_dir}")
 
         file_path = self.rng.choice(files)
-        print(f"Randomly selected file: {file_path}")  # Debugging line to ensure randomness
         return dict(np.load(file_path, allow_pickle=True))
 
     def _extract_scalar(self, data: Dict[str, Any], key: str, default: float) -> float:

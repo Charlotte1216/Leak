@@ -130,6 +130,35 @@ class MARLTrainer:
             'losses': [],
             'found_sources': []
         }
+
+    def _estimate_bootstrap_value(
+        self,
+        agent: MARLAgent,
+        states: np.ndarray,
+        next_states: np.ndarray,
+        dones: np.ndarray,
+    ) -> float:
+        """
+        Estimate the bootstrap value for the final transition when a trajectory
+        is truncated by the rollout horizon instead of a terminal environment state.
+        """
+        if len(dones) == 0 or bool(dones[-1]):
+            return 0.0
+        if next_states is None or len(next_states) == 0:
+            return 0.0
+
+        bootstrap_state = np.asarray(next_states[-1], dtype=np.float32)
+        history_states = None
+        if agent.network_type == 'lstm':
+            state_history = np.asarray(states, dtype=np.float32)
+            window_size = max(1, int(getattr(agent, 'ppo_lstm_seq_len', 16)))
+            seq_parts = []
+            if window_size > 1 and state_history.size > 0:
+                seq_parts.append(state_history[-(window_size - 1):])
+            seq_parts.append(bootstrap_state.reshape(1, -1))
+            history_states = np.concatenate(seq_parts, axis=0)
+
+        return agent.estimate_value(bootstrap_state, history_states=history_states)
     
     def compute_gae(
         self,
@@ -189,21 +218,16 @@ class MARLTrainer:
         for agent_idx, agent in enumerate(self.agents):
             traj = trajectories[agent_idx]
             
-            states = np.array(traj['states'])
-            next_states = np.array(traj.get('next_states', []))
-            actions = np.array(traj['actions'])
-            rewards = np.array(traj['rewards'])
-            dones = np.array(traj['dones'])
-            old_log_probs = np.array(traj['old_log_probs'])
-            values = np.array(traj['values'])
+            states = np.asarray(traj['states'], dtype=np.float32)
+            next_states = np.asarray(traj.get('next_states', []), dtype=np.float32)
+            actions = np.asarray(traj['actions'])
+            rewards = np.asarray(traj['rewards'], dtype=np.float32)
+            dones = np.asarray(traj['dones'], dtype=bool)
+            old_log_probs = np.asarray(traj['old_log_probs'], dtype=np.float32)
+            values = np.asarray(traj['values'], dtype=np.float32)
             
-            # 计算最后一个状态的价值
-            if not dones[-1]:
-                # 需要从环境中获取下一个状态的价值
-                # 这里假设最后一个状态的价值已经包含在 values 中
-                next_value = values[-1] if len(values) > len(rewards) else 0.0
-            else:
-                next_value = 0.0
+            # 对被 rollout 长度截断的轨迹进行真实 bootstrap，而不是默认置 0。
+            next_value = self._estimate_bootstrap_value(agent, states, next_states, dones)
             
             # 计算 GAE
             values_list = list(values) + [next_value]

@@ -272,16 +272,19 @@ def _setup_logging(log_dir: Path, log_file: str) -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-    if not logger.handlers:
-        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
 
-        file_handler = logging.FileHandler(log_dir / log_file, encoding="utf-8")
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+    file_handler = logging.FileHandler(log_dir / log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
 
     return logger
 
@@ -330,6 +333,60 @@ def _append_avg_reward(
             ]
         )
 
+
+def _build_run_signature(cfg: Dict[str, Any]) -> str:
+    seed = int(cfg.get("seed", 42))
+    marl_cfg = cfg.get("marl", {})
+    env_cfg = cfg.get("environment", {})
+    agent_cfg = cfg.get("agent", {})
+
+    marl_algorithm = str(marl_cfg.get("algorithm", "mappo")).lower()
+    agent_algorithm = str(agent_cfg.get("algorithm", "ppo")).lower()
+    network_type = str(
+        agent_cfg.get("network", {}).get("type", agent_cfg.get("network_type", "ffnn"))
+    ).lower()
+
+    learning_cfg = agent_cfg.get("learning", {})
+    ppo_cfg = learning_cfg.get("ppo", {})
+    aux_cfg = ppo_cfg.get("aux", {})
+    lstm_training_cfg = ppo_cfg.get("lstm_training", {})
+
+    communication_cfg = env_cfg.get("communication", {})
+    channel_cfg = communication_cfg.get("channel", {}) if isinstance(communication_cfg, dict) else {}
+    dynamic_cfg = env_cfg.get("dynamic_field", {}) if isinstance(env_cfg, dict) else {}
+
+    aux_enabled = bool(aux_cfg.get("enabled", False))
+    aux_weight = float(aux_cfg.get("weight", 0.0))
+    seq_enabled = bool(lstm_training_cfg.get("enabled", False))
+    seq_len = int(lstm_training_cfg.get("seq_len", 0))
+    seq_stride = int(lstm_training_cfg.get("stride", 0))
+    comm_enabled = bool(communication_cfg.get("enabled", False)) if isinstance(communication_cfg, dict) else False
+    comm_top_k = int(communication_cfg.get("top_k", 0)) if isinstance(communication_cfg, dict) else 0
+    channel_mode = str(channel_cfg.get("mode", "none")).lower() if isinstance(channel_cfg, dict) else "none"
+    dynamic_field_enabled = bool(dynamic_cfg.get("enabled", False)) if isinstance(dynamic_cfg, dict) else False
+
+    trainer_cfg = marl_cfg.get(marl_algorithm, {}) if isinstance(marl_cfg, dict) else {}
+    gamma = float(trainer_cfg.get("gamma", learning_cfg.get("gamma", 0.99)))
+    lr = float(learning_cfg.get("lr", 3e-4))
+    batch_size = int(learning_cfg.get("batch_size", 64))
+
+    parts = [
+        f"seed={seed}",
+        f"marl={marl_algorithm}",
+        f"agent={agent_algorithm}",
+        f"net={network_type}",
+        f"aux={'on' if aux_enabled else 'off'}@{aux_weight:.3f}",
+        f"lr={lr:.1e}",
+        f"gamma={gamma:.3f}",
+        f"bs={batch_size}",
+        f"agents={int(env_cfg.get('num_agents', 0))}",
+        f"comm={'on' if comm_enabled else 'off'}:{channel_mode}/k{comm_top_k}",
+        f"dyn={'on' if dynamic_field_enabled else 'off'}",
+    ]
+    if network_type == "lstm":
+        parts.append(f"seq={'on' if seq_enabled else 'off'}:{seq_len}/{seq_stride}")
+    return " | ".join(parts)
+
 def train_loop(
     trainer: MARLTrainer,
     env: PlumeEnv,
@@ -353,6 +410,8 @@ def train_loop(
     base_log_dir = Path(output_cfg["log_dir"])
     run_log_dir = base_log_dir / log_run_tag if log_run_tag else base_log_dir
     run_log_dir.mkdir(parents=True, exist_ok=True)
+    run_signature = _build_run_signature(cfg)
+    logger.info(f"Run Config | {run_signature}")
 
     trainer.training_stats.setdefault("found_sources", [])
     trainer.training_stats.setdefault("total_sources", [])
@@ -504,6 +563,7 @@ def train_loop(
                 for key in component_sums
             }
             logger.info(
+                f"{run_signature} | "
                 f"Episode {episode + 1}/{num_episodes} | "
                 f"Avg Reward: {avg_reward:.2f} | "
                 f"Avg Length: {avg_length:.2f} | "

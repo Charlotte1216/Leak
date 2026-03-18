@@ -19,6 +19,8 @@ except ModuleNotFoundError:
 
 REPO_ROOT = Path(__file__).resolve().parent
 EXPERIMENT_DIR = REPO_ROOT / "marl_leakage_search" / "experiments" / "Train_network"
+PLOT_START_EPISODE: int | None = 450
+PLOT_END_EPISODE: int | None = 2990
 
 
 def find_latest_reward_csv(search_dir: Path) -> Path:
@@ -59,13 +61,51 @@ def moving_average(values: List[float], window: int) -> List[float]:
     return out
 
 
+def clip_episode_range(
+    episodes: List[int],
+    rewards: List[float],
+    start_episode: int | None = None,
+    end_episode: int | None = None,
+) -> Tuple[List[int], List[float]]:
+    if start_episode is not None and end_episode is not None and start_episode > end_episode:
+        raise ValueError("--start-episode cannot be greater than --end-episode.")
+
+    clipped: List[Tuple[int, float]] = []
+    for episode, reward in zip(episodes, rewards):
+        if start_episode is not None and episode < start_episode:
+            continue
+        if end_episode is not None and episode > end_episode:
+            continue
+        clipped.append((episode, reward))
+
+    if not clipped:
+        raise ValueError("No reward data found in the requested episode range.")
+
+    clipped_episodes, clipped_rewards = zip(*clipped)
+    return list(clipped_episodes), list(clipped_rewards)
+
+
 def plot_reward_trend(
     csv_path: Path,
     output_path: Path | None = None,
     smooth_window: int = 5,
     show: bool = True,
+    start_episode: int | None = None,
+    end_episode: int | None = None,
+    episode_axis_origin: int | None = None,
+    title: str | None = None,
+    xlabel: str = "Episode",
+    ylabel: str = "Avg Reward",
 ) -> None:
     episodes, rewards = read_reward_csv(csv_path)
+    episodes, rewards = clip_episode_range(
+        episodes,
+        rewards,
+        start_episode=start_episode,
+        end_episode=end_episode,
+    )
+    if episode_axis_origin is not None:
+        episodes = [episode - int(episode_axis_origin) for episode in episodes]
 
     if not HAS_MATPLOTLIB:
         if output_path is None:
@@ -73,7 +113,16 @@ def plot_reward_trend(
                 "matplotlib is not installed, cannot show plot directly. "
                 "Use --output to save an SVG fallback."
             )
-        _plot_reward_trend_svg(csv_path, output_path, episodes, rewards, smooth_window)
+        _plot_reward_trend_svg(
+            csv_path,
+            output_path,
+            episodes,
+            rewards,
+            smooth_window,
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
+        )
         return
 
     plt.figure(figsize=(10, 5))
@@ -98,9 +147,11 @@ def plot_reward_trend(
         fontsize=9,
     )
 
-    plt.title(f"Reward Trend: {csv_path.name}")
-    plt.xlabel("Episode")
-    plt.ylabel("Avg Reward")
+    effective_title = f"Reward Trend: {csv_path.name}" if title is None else title
+    if effective_title:
+        plt.title(effective_title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -119,9 +170,14 @@ def _plot_reward_trend_svg(
     episodes: List[int],
     rewards: List[float],
     smooth_window: int,
+    title: str | None = None,
+    xlabel: str = "Episode",
+    ylabel: str = "Avg Reward",
 ) -> None:
     width, height = 1000, 520
-    left, right, top, bottom = 70, 20, 50, 60
+    left, right = 70, 20
+    top = 50 if title is None or title else 28
+    bottom = 60
     plot_w = width - left - right
     plot_h = height - top - bottom
 
@@ -200,12 +256,18 @@ def _plot_reward_trend_svg(
         f'<text x="{last_x + 8:.2f}" y="{last_y - 8:.2f}" font-size="12" fill="#222">{rewards[-1]:.2f}</text>'
     )
 
-    title = escape(f"Reward Trend: {csv_path.name}")
+    effective_title = f"Reward Trend: {csv_path.name}" if title is None else title
+    title_block = ""
+    if effective_title:
+        title_block = (
+            f'<text x="{width/2:.2f}" y="24" font-size="16" text-anchor="middle" fill="#111">'
+            f"{escape(effective_title)}</text>"
+        )
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
 <rect width="100%" height="100%" fill="white" />
-<text x="{width/2:.2f}" y="24" font-size="16" text-anchor="middle" fill="#111">{title}</text>
-<text x="{width/2:.2f}" y="{height-6}" font-size="12" text-anchor="middle" fill="#333">Episode</text>
-<text x="18" y="{height/2:.2f}" font-size="12" text-anchor="middle" fill="#333" transform="rotate(-90 18 {height/2:.2f})">Avg Reward</text>
+{title_block}
+<text x="{width/2:.2f}" y="{height-6}" font-size="12" text-anchor="middle" fill="#333">{escape(xlabel)}</text>
+<text x="18" y="{height/2:.2f}" font-size="12" text-anchor="middle" fill="#333" transform="rotate(-90 18 {height/2:.2f})">{escape(ylabel)}</text>
 {''.join(grid_lines)}
 <rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="none" stroke="#888" stroke-width="1" />
 {raw_line}
@@ -267,6 +329,8 @@ def main() -> None:
         output_path,
         smooth_window=max(1, args.smooth_window),
         show=show_plot,
+        start_episode=PLOT_START_EPISODE,
+        end_episode=PLOT_END_EPISODE,
     )
     print(f"CSV: {csv_path}")
     if show_plot:

@@ -1,6 +1,6 @@
 [
   {
-    "seed": 276344,
+    "seed": 456558,
     "agent_algorithm": "ppo",
     "network_type": "ffnn",
     "marl_algorithm": "mappo",
@@ -14,7 +14,7 @@
     "batch_size": 64,
     "aux_enabled": true,
     "trend_ok": true,
-    "slope": 0.044914994271064115,
-    "points": 800
+    "slope": 0.3725641144099238,
+    "points": 327
   }
 ]

@@ -3,7 +3,7 @@
 
 # 网络结构配置
 network:
-  type: "lstm"  # 可选: "ffnn", "lstm", "transformer"
+  type: "ffnn"  # 可选: "ffnn", "lstm", "transformer"
   hidden_dims: [128, 128]  # 隐藏层维度
   activation: "relu"  # 激活函数: "relu", "tanh"
   
@@ -45,13 +45,13 @@ learning:
     entropy_coef: 0.003  # 熵损失系数
     aux:
       enabled: true  # 是否启用辅助预测头（预测下一时刻浓度）
-      weight: 0.0  # 辅助损失权重 λ，建议范围 0.05~0.2
+      weight: 0.1  # 辅助损失权重 λ，建议范围 0.05~0.2
       target_index: 2  # 预测目标在观测向量中的索引（浓度默认在第 3 维）
       hidden_dim: 128  # 辅助头隐藏层宽度
     lstm_training:
       enabled: true  # 仅在 network.type=lstm 时生效；FFNN/Transformer 不受影响
-      seq_len: 16  # LSTM 训练序列长度
-      stride: 4  # 滑动窗口步长
+      seq_len: 32  # LSTM 训练序列长度
+      stride: 1  # 滑动窗口步长
 
 # 设备配置
 device: "cuda"  # 可选: "cuda", "cpu"

@@ -31,11 +31,11 @@ learning:
     entropy_coef: 0.003
     aux:
       enabled: true
-      weight: 0.0
+      weight: 0.1
       target_index: 2
       hidden_dim: 128
     lstm_training:
       enabled: true
-      seq_len: 16
-      stride: 4
+      seq_len: 32
+      stride: 1
 device: cuda

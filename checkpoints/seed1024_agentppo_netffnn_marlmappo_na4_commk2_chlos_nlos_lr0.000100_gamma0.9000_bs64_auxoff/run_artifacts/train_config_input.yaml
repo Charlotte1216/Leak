@@ -1,5 +1,5 @@
 training:
-  num_episodes: 8000
+  num_episodes: 3000
   max_steps_per_episode: 1000
   save_interval: 100
   eval_interval: 50

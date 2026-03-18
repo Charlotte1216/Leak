@@ -1,0 +1,23 @@
+{
+  "stats_path": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\logs\\seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000100_gamma0.9000_bs64_auxon\\training_stats.json",
+  "episode_reward_csv": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\logs\\seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000100_gamma0.9000_bs64_auxon\\reward_analysis\\episode_reward_history.csv",
+  "reward_plot": "C:\\Users\\Charlotte\\NewStart\\EXP\\GaosiLeak\\logs\\seed42_agentppo_netffnn_marlmappo_na4_commk2_chlos_nlos_lr0.000100_gamma0.9000_bs64_auxon\\reward_analysis\\episode_reward_curve.png",
+  "num_episodes": 3000,
+  "final_reward": 86.22872448251212,
+  "best_reward": 270.6642319687595,
+  "best_reward_episode": 2526,
+  "reward_mean": 50.51028952424501,
+  "reward_std": 109.99596493969854,
+  "tail_window": 100,
+  "tail_mean_reward": 52.60628610986973,
+  "tail_std_reward": 124.79722964542745,
+  "tail_slope": 0.9775628250078663,
+  "smooth_window": 50,
+  "final_smooth_reward": 74.482280718293,
+  "smooth_tail_slope": 1.1349391010433685,
+  "final_found_ratio": 1.0,
+  "tail_success_rate": 0.61,
+  "tail_partial_success_rate": 0.97,
+  "best_smooth_reward": 120.3836166051413,
+  "best_smooth_episode": 2224
+}

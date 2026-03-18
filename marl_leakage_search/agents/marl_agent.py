@@ -270,6 +270,37 @@ class MARLAgent:
                 action, log_prob, entropy, value = self.policy_net.get_action_and_value(state_tensor)
             
             return action.item(), log_prob, value
+
+    def estimate_value(
+        self,
+        state: np.ndarray,
+        history_states: Optional[np.ndarray] = None,
+    ) -> float:
+        """
+        Estimate the critic value for a bootstrap state.
+        For recurrent policies, an optional state history can be provided so the
+        value estimate is conditioned on recent context instead of a single frame.
+        """
+        if self.algorithm != 'ppo':
+            raise ValueError("Value estimation helper is only available for PPO agents")
+
+        with torch.no_grad():
+            if self.network_type == 'lstm':
+                self.policy_net.hidden_state = None
+                if history_states is not None:
+                    seq = np.asarray(history_states, dtype=np.float32)
+                    if seq.ndim == 1:
+                        seq = seq.reshape(1, -1)
+                    seq_tensor = torch.as_tensor(seq, dtype=torch.float32, device=self.device).unsqueeze(0)
+                    _, value, _ = self.policy_net(seq_tensor, hidden=None)
+                else:
+                    state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+                    _, value, _ = self.policy_net(state_tensor, hidden=None)
+            else:
+                state_tensor = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+                _, value = self.policy_net(state_tensor)
+
+        return float(value.view(-1)[-1].item())
     
     def train(self, batch: Optional[Dict] = None):
         """
